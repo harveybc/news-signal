@@ -1,0 +1,14 @@
+{
+  "schema": "news_signal_method.v1",
+  "current_stage": "integration_verification",
+  "completed": ["discovery", "requirements", "acceptance_test_design", "architecture", "unit_test_design", "implementation", "unit_verification"],
+  "traceability": "docs/DESIGN.md",
+  "software_evidence": "tests/test_signal.py; fixture CLI and CPU tests",
+  "real_weights_measured": false,
+  "governed_live_inputs": false,
+  "broker_connections_accepted": [],
+  "real_capital_authorized": false,
+  "next_allowed_actions": ["Isolated pinned Laya weight smoke and resource measurements", "Prospective governed licensed collector", "LTS policy contract and MT5 demo/Alpaca paper tests"],
+  "excluded": ["Profit claims", "Automatic real-money promotion", "Bypassing active experiment ownership"],
+  "history": [{"date": "2026-09-24", "action": "Scope and tests declared before adapter implementation; no broker or model-weight run"}]
+}

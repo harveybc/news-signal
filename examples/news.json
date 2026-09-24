@@ -1,0 +1,11 @@
+{
+  "schema": "news_event.v1",
+  "event_id": "synthetic-release-001-revision-1",
+  "source": "synthetic-fixture",
+  "asset": "EXAMPLE",
+  "language": "en",
+  "published_at": "2026-09-23T12:00:00Z",
+  "received_at": "2026-09-23T12:00:02Z",
+  "headline": "Example Company reports quarterly results",
+  "body": "Example Company reported revenue above its prior guidance. This is fabricated test news, not a real security."
+}
