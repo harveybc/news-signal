@@ -80,6 +80,7 @@ class LayaNewsProvider:
         self.calls = 0
         self.last_load = None
         self.last_inference = None
+        self.last_budget = None
 
     # --- what the runtime checks before anything is loaded ---------------------------------------------------------------
     def capabilities(self):
@@ -169,6 +170,8 @@ class LayaNewsProvider:
         elapsed = time.perf_counter() - started
         self.calls += 1
         self.last_inference = {"seconds": elapsed, "task_id": task_id, "event_id": event["event_id"]}
+        # what the pinned SDK was actually given, counted before it could cut anything
+        self.last_budget = getattr(backend, "last_budget", None)
         labels = core.validate_answers(response, questions)
         outputs = {}
         for question in requested:
