@@ -1,36 +1,37 @@
 {
- "capabilities_supported": [
-  {
-   "family": "classification",
-   "operation": "infer",
-   "output_kind": "typed_questions"
-  }
- ],
- "classify_without_weights": {
-  "returncode": 2,
-  "status": "REFUSED_WITH_INPUT",
-  "why": "MODEL_NOT_FITTED"
- },
  "console_script": "news-signal",
  "editable_or_pythonpath_substitution": false,
  "entry_point_discovered": "laya_news",
  "entry_point_group": "m5phet.providers",
  "entry_point_refused": {},
  "fresh_process_store_recovery": {
-  "actionable_events": 0,
+  "actionable_events": 1,
   "inference_performed": false,
   "integrity_failures": [],
-  "records": 1,
-  "refused_events": 1,
-  "returncode": 0
+  "records": 1
  },
  "imported_m5phet_runtime": true,
+ "installed_entry_point_ask": {
+  "backend_kind": "NON_MODEL_FIXTURE",
+  "entry_point_discovered": "laya_news",
+  "label": "none",
+  "option_order": [
+   "us",
+   "eu",
+   "none"
+  ],
+  "question": "Which economy is named?",
+  "returncode": 0,
+  "status": "SHADOW_ONLY",
+  "stored": "STORED",
+  "task_id": "adhoc.question.v1:76d95fc24a08a692bd80b1b68bac796b9ce8ea5d0fb9d90d34404651c98fd69d",
+  "token_budget_checked": true
+ },
  "installed_inside_venv": true,
- "m5phet_location": "/tmp/claude-1000/-home-harveybc-Documents-GitHub-predictor/94c1b43d-d764-48d5-885f-68470ae06b5f/scratchpad/cleanenv/lib",
- "pinned_commit": "e752ed194c65dc42804ead3759a615a07f3ea8f0",
+ "pinned_commit": "3f4a833ca794b20962c64a98f9f5280494185f9b",
  "pinned_url": "https://github.com/harveybc/M5PHET.git",
  "python": "3.12.7",
- "reading": "resolved by pip from the declared git pin alone: no editable install, no PYTHONPATH and no sibling checkout. Weights are absent in this environment, so the classification refuses MODEL_NOT_FITTED before loading anything, which is the behaviour under test here",
- "schema": "news_install_verification.v1",
+ "reading": "resolved by pip from the declared git pin alone. The backend is the package's declared NON_MODEL_FIXTURE, so this proves the installed path answers a user-authored question end to end; it measures no model",
+ "schema": "news_install_verification.v2",
  "venv": "ISOLATED_CLEAN_VENV"
 }

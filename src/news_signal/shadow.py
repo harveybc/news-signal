@@ -21,6 +21,7 @@ quarantined rather than returned or counted.
 Nothing here contacts a broker, a venue or a governance service. `execution_authorized` is False in every record it writes.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -58,7 +59,8 @@ def _source(receipt):
 
 
 def record_identity(receipt):
-    """The opaque key. It is computed from what the result IS, never from text that arrived from outside."""
+    """The opaque key. It is computed from what the result IS, never from text that arrived from outside, and never from a
+    field a copied record brought with it: `record_id` is DERIVED here and then compared, not trusted."""
     return digest({"schema": RECORD_SCHEMA, "source": _source(receipt), "evaluation": _evaluation(receipt),
                    "status": receipt.get("status")})
 
@@ -92,21 +94,47 @@ class ShadowStore:
             raise Refusal(f"STORE_ESCAPE_REFUSED: {path.name} resolves outside the store root")
 
     # --- reading ----------------------------------------------------------------------------------------------------
-    def _read(self, path):
+    def _read(self, path, *, expected_key=None):
+        """A record that cannot be parsed is reported as a failure of THAT key, not raised past the caller: a torn file in
+        the store must not make the whole store unreadable, and must never be mistaken for an absent record."""
+        if expected_key is None and path.parent.name != "quarantine":
+            expected_key = path.stem
         try:
             record = json.loads(path.read_text())
         except (OSError, ValueError) as exc:
-            raise Refusal(f"UNREADABLE_SHADOW_RECORD: {path.name}") from exc
-        return self._checked(record)
+            return {"record_sha256": None, "record_id": expected_key, "integrity": "FAILED",
+                    "integrity_problems": [f"UNREADABLE_SHADOW_RECORD: {path.name}: {exc.__class__.__name__}"],
+                    "unreadable": True, "event_id": None, "status": None}
+        if not isinstance(record, dict):
+            return {"record_sha256": None, "record_id": expected_key, "integrity": "FAILED",
+                    "integrity_problems": ["SHADOW_RECORD_NOT_A_MAPPING"], "unreadable": True,
+                    "event_id": None, "status": None}
+        return self._checked(record, expected_key=expected_key)
 
     @staticmethod
-    def _checked(record):
-        """A record carries its own digest. One that no longer hashes to it is reported, never repaired and never reused."""
+    def _checked(record, expected_key=None):
+        """Three questions, not one. Does the record hash to its own digest? Does it hash to the KEY it was found under?
+        And is that key the identity its own fields derive?
+
+        The middle question is the one that was missing. A whole, self-consistent record for another question, copied onto
+        this question's path, answered the first question perfectly -- and was served as this question's result."""
         stored = record.get("record_sha256")
         recomputed = digest({k: v for k, v in record.items() if k != "record_sha256"})
         record = dict(record)
-        record["integrity"] = "OK" if stored == recomputed else "FAILED"
+        problems = []
+        if stored != recomputed:
+            problems.append("CONTENT_DIGEST_MISMATCH: the record does not hash to its own recorded digest")
+        derived = record_identity(record)
+        if record.get("record_id") != derived:
+            problems.append(f"IDENTITY_MISMATCH: the record's own fields derive key {derived[:12]} and it carries "
+                            f"{str(record.get('record_id'))[:12]}")
+        if expected_key is not None and derived != expected_key:
+            problems.append(f"MISPLACED_RECORD: this record belongs under key {derived[:12]} and was found under "
+                            f"{expected_key[:12]}; a valid answer to another question is not this one's result")
+        record["integrity"] = "OK" if not problems else "FAILED"
+        record["integrity_problems"] = problems
         record["recomputed_sha256"] = recomputed
+        record["derived_record_id"] = derived
         return record
 
     def all_records(self, *, include_quarantine=False):
@@ -154,7 +182,7 @@ class ShadowStore:
         record_id = record_identity(receipt)
         path = self._path(record_id)
         prior = self.records_for(receipt.get("event_id"))
-        existing = self._read(path) if path.is_file() else None
+        existing = self._read(path, expected_key=record_id) if path.is_file() else None
         if existing is not None and existing.get("integrity") == "OK":
             return existing, "DUPLICATE"
         invalid_existing = existing is not None
@@ -175,7 +203,15 @@ class ShadowStore:
             record["replaces_invalid_record"] = record_id
             record["quarantined_predecessor"] = self._quarantine(path, record_id)
         record["record_sha256"] = digest({k: v for k, v in record.items() if k != "record_sha256"})
-        self._write(path, record)
+        created = self._write(path, record)
+        if not created:
+            # another writer won the race for this key between our read and our write. Their record is the record: two
+            # callers must not walk away holding different digests for one evaluation.
+            raced = self._read(path, expected_key=record_id)
+            if raced.get("integrity") == "OK":
+                return raced, "DUPLICATE"
+            self._quarantine(path, record_id)
+            self._write(path, record)
         if invalid_existing:
             disposition = "REPLACED_INVALID"
         elif not prior:
@@ -187,16 +223,28 @@ class ShadowStore:
         return record, disposition
 
     def _quarantine(self, path, record_id):
-        """A record that failed its own digest is moved aside, not deleted: deleting it would erase what went wrong."""
+        """A record that failed a check is moved aside, not deleted: deleting it would erase what went wrong.
+
+        The quarantine name carries the BYTES that were quarantined, so a second bad version of the same key cannot
+        overwrite the first and every one of them is preserved."""
         root = self._resolved_root()
-        target = root / "quarantine" / f"{record_id}.json"
+        try:
+            content = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+        except OSError:
+            content = "unreadable"
+        target = root / "quarantine" / f"{record_id}.{content}.json"
         self._contained(root, target)
         target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            return target.relative_to(root).as_posix()          # the identical bytes are already preserved
         os.replace(path, target)
         return target.relative_to(root).as_posix()
 
-    def _write(self, path, record):
-        """Atomic within the store: a reader never sees a half-written record, and an interrupted write leaves a `.tmp`."""
+    def _write(self, path, record) -> bool:
+        """Atomic within the store: a reader never sees a half-written record, and an interrupted write leaves a `.tmp`.
+
+        Two writers racing on the SAME key write identical bytes -- the key is derived from the evaluation and the content
+        from the record -- so `os.replace` makes the last one win with nothing lost. Different keys never share a path."""
         path.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".writing-", suffix=".json.tmp")
         try:
@@ -204,10 +252,17 @@ class ShadowStore:
                 stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False, indent=1, sort_keys=True))
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            # an exclusive create, not a replace: whoever gets there first owns the key, and the losers read it back rather
+            # than overwriting a record whose digest another caller is already holding
+            try:
+                os.link(temporary, path)
+                return True
+            except FileExistsError:
+                return False
         except BaseException:
-            Path(temporary).unlink(missing_ok=True)
             raise
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
     # --- replay -----------------------------------------------------------------------------------------------------
     def replay(self):
@@ -242,7 +297,8 @@ class ShadowStore:
                 if record.get("integrity") != "OK":
                     report["integrity_failures"].append({"event_id": event_id,
                                                          "record_sha256": record.get("record_sha256"),
-                                                         "recomputed": record.get("recomputed_sha256")})
+                                                         "recomputed": record.get("recomputed_sha256"),
+                                                         "problems": record.get("integrity_problems")})
                 if record.get("execution_authorized") is not False:
                     report["integrity_failures"].append({"event_id": event_id, "reason": "EXECUTION_AUTHORIZED_IN_STORE"})
             decided = [r for r in live if r.get("integrity") == "OK" and r.get("status") == "SHADOW_ONLY"]

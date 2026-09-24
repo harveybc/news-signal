@@ -24,6 +24,7 @@ from pathlib import Path
 import time
 
 from . import core
+from .backends import sequence_budget
 from .core import Refusal, canonical, digest, validate_news
 from .question import AD_HOC_PREFIX
 from .tasks import TASKS, check_scope, questions as task_questions
@@ -46,8 +47,11 @@ def configuration(environ=None):
     """What this process was configured with. Read once per provider instance; never guessed and never defaulted to a device."""
     env = os.environ if environ is None else environ
     device = env.get("NEWS_SIGNAL_DEVICE", "cpu")
+    backend = env.get("NEWS_SIGNAL_BACKEND", "laya")
+    if backend not in ("laya", "fixture"):
+        raise Refusal(f"UNKNOWN_BACKEND: {backend!r} is not one of ('laya', 'fixture')")
     return {"checkpoint": env.get("NEWS_SIGNAL_CHECKPOINT"), "manifest": env.get("NEWS_SIGNAL_MANIFEST"),
-            "device": device, "gpu_uuid": env.get("NEWS_SIGNAL_GPU_UUID")}
+            "device": device, "gpu_uuid": env.get("NEWS_SIGNAL_GPU_UUID"), "backend": backend}
 
 
 def state_ref_for(manifest_sha256):
@@ -75,12 +79,19 @@ class LayaNewsProvider:
     def __init__(self, environ=None, backend_factory=None):
         self.config = configuration(environ)
         self._manifest = _read_manifest(self.config["manifest"])
+        if self.config["backend"] == "fixture" and self._manifest is None:
+            # a declared non-model has no checkpoint, so its state is named after the fixture itself. Nothing about this can
+            # be confused with weights: the identity says NON_MODEL_FIXTURE and travels into every receipt.
+            from .backends import FixtureBackend
+            self._manifest = {"schema": "news_checkpoint.v1", "sha256": digest(FixtureBackend.identity),
+                              "files": {}, "kind": "NON_MODEL_FIXTURE"}
         self._backend_factory = backend_factory or self._real_backend
         self._backends = {}
         self.calls = 0
         self.last_load = None
         self.last_inference = None
         self.last_budget = None
+        self.last_budget_checked = None
 
     # --- what the runtime checks before anything is loaded ---------------------------------------------------------------
     def capabilities(self):
@@ -95,13 +106,16 @@ class LayaNewsProvider:
                 "known_states": known,
                 "tasks": sorted(TASKS),
                 "device": self.config["device"],
-                "weights_present": manifest is not None,
+                "backend": self.config["backend"],
+                "weights_present": manifest is not None and manifest.get("kind") != "NON_MODEL_FIXTURE",
                 "reading": ("probabilities are the pinned SDK's own uncalibrated outputs at its own precision; agreeing with "
                             "the SDK is fidelity of this wrapper, not calibration and not domain accuracy")}
 
     # --- the fitted state ------------------------------------------------------------------------------------------------
     def _real_backend(self, config, manifest):
-        from .backends import LayaBackend
+        from .backends import FixtureBackend, LayaBackend
+        if config["backend"] == "fixture":
+            return FixtureBackend()
         return LayaBackend(config["checkpoint"], manifest, config["device"], config["gpu_uuid"])
 
     def load(self, state_ref):
@@ -162,6 +176,19 @@ class LayaNewsProvider:
             return {"outputs": {q: {"status": "INVALID_INPUT", "why": refusal} for q in (requested or sorted(questions))}}
         backend = self._backends[state["state_ref"]]
         serialized = canonical({k: event[k] for k in ("asset", "headline", "body")})
+        # The budget belongs here, not inside one backend: the guarantee is the provider's, whichever backend answers. A
+        # backend that exposes no tokenizer cannot be checked, and the receipt says so rather than implying it was.
+        tokenizer = backend.tokenizer() if callable(getattr(backend, "tokenizer", None)) else None
+        budget = sequence_budget(tokenizer, serialized, questions) if tokenizer is not None else None
+        self.last_budget = budget
+        self.last_budget_checked = budget is not None
+        if budget is not None:
+            over = sorted(name for name, entry in budget.items() if not entry["fits"])
+            if over:
+                why = (f"TOKEN_BUDGET_EXCEEDED: {over} would be truncated by the pinned SDK "
+                       f"({budget[over[0]]}); shorten the field, the question or its options, "
+                       f"do not silently truncate")
+                return {"outputs": {q: {"status": "INVALID_INPUT", "why": why} for q in requested}}
         started = time.perf_counter()
         try:
             response = backend.predict(serialized, questions)
@@ -171,7 +198,7 @@ class LayaNewsProvider:
         self.calls += 1
         self.last_inference = {"seconds": elapsed, "task_id": task_id, "event_id": event["event_id"]}
         # what the pinned SDK was actually given, counted before it could cut anything
-        self.last_budget = getattr(backend, "last_budget", None)
+        self.last_budget = budget if budget is not None else getattr(backend, "last_budget", None)
         labels = core.validate_answers(response, questions)
         outputs = {}
         for question in requested:
@@ -197,6 +224,8 @@ class LayaNewsProvider:
                                "input_sha256": digest(event),
                                "response_sha256": digest(response),
                                "inference_seconds": elapsed,
+                               "token_budget": copy.deepcopy(budget),
+                               "token_budget_checked": budget is not None,
                                "sdk_response": copy.deepcopy(response)}}
 
 

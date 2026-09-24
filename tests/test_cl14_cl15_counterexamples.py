@@ -191,7 +191,9 @@ def test_an_option_at_the_limit_still_fits():
 
 def test_the_public_path_refuses_a_question_whose_option_would_be_cut(stub):
     registry, backend = stub
-    spec = {**SPEC_A, "options": [("us", " ".join(f"word{i}" for i in range(60))),
+    # short words on purpose: under the character limit, over the SDK's 48-token option cut, so only the token
+    # accounting can catch it
+    spec = {**SPEC_A, "options": [("us", " ".join(f"w{i}" for i in range(60))),
                                   ("eu", "Euro area"), ("none", "Neither")]}
     outcome = classify_event(corpus_events()["00_relevant"], task_id=ad_hoc_task(**spec)["task_id"],
                              question_spec=spec, as_of=AS_OF, registry=registry)

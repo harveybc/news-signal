@@ -39,8 +39,17 @@ class StubLaya:
 
     identity = {"kind": "NON_MODEL_FIXTURE", "name": "stub-laya-v1"}
 
+    class Tokenizer:
+        """Deterministic and declared: one token per whitespace-separated word, never the checkpoint's tokenizer."""
+
+        def encode(self, text, add_special_tokens=False):
+            return text.split()
+
     def __init__(self):
         self.seen = []
+
+    def tokenizer(self):
+        return self.Tokenizer()
 
     def predict(self, state, questions=None):
         questions = QUESTIONS if questions is None else questions

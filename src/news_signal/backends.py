@@ -51,6 +51,10 @@ def verify_checkpoint(directory, manifest):
     return manifest
 
 
+#: `laya/common.py::build_sequence` keeps at most this many tokens of each rendered option, silently
+OPTION_TOKEN_LIMIT = 48
+
+
 def sequence_budget(tok, state, questions, *, max_len=512, head_max_len=192):
     """What the pinned SDK will and will not fit into one sequence, counted BEFORE it silently cuts anything.
 
@@ -64,8 +68,12 @@ def sequence_budget(tok, state, questions, *, max_len=512, head_max_len=192):
     reports = {}
     for name, question in questions.items():
         head = tok.encode(f"{question['type']} question: {question['instructions']}", add_special_tokens=False)
-        options = [1 + len(tok.encode(" " + f"{k}: {v}", add_special_tokens=False)[:48])
-                   for k, v in question["criteria"].items()]
+        # Count what was ASKED, then what upstream would keep. Counting after the `[:48]` slice measured the slice, so `fits`
+        # could never be False for the one cut it was written to catch.
+        asked = {k: len(tok.encode(" " + f"{k}: {v}", add_special_tokens=False)) for k, v in question["criteria"].items()}
+        kept = {k: min(n, OPTION_TOKEN_LIMIT) for k, n in asked.items()}
+        truncated = sorted(k for k, n in asked.items() if n > OPTION_TOKEN_LIMIT)
+        options = [1 + n for n in kept.values()]
         option_tokens = sum(options)
         option_budget = head_max_len - option_tokens
         head_kept = min(len(head), max(8, option_budget))
@@ -75,20 +83,49 @@ def sequence_budget(tok, state, questions, *, max_len=512, head_max_len=192):
         state_tokens = len(tok.encode(state, add_special_tokens=False))
         reports[name] = {"head_tokens": len(head), "head_tokens_kept": head_kept,
                          "option_tokens": option_tokens, "options_capped": option_budget < 16,
+                         "option_tokens_asked": asked, "option_tokens_kept": kept,
+                         "option_token_limit": OPTION_TOKEN_LIMIT,
+                         "options_truncated": truncated,
                          "state_tokens": state_tokens, "state_tokens_kept": min(state_tokens, room),
                          "state_room": room, "max_len": max_len, "head_max_len": head_max_len,
-                         "fits": head_kept >= len(head) and state_tokens <= room and option_budget >= 16}
+                         "fits": (head_kept >= len(head) and state_tokens <= room and option_budget >= 16
+                                  and not truncated)}
     return reports
 
 
 class FixtureBackend:
-    identity = {"kind": "NON_MODEL_FIXTURE", "name": "always-unclear-v1"}
+    """A declared non-model. It answers deterministically so the whole path can be exercised without 2.3 GB of weights, and
+    every receipt it produces carries `NON_MODEL_FIXTURE` so nothing it says can be mistaken for a measurement."""
+
+    identity = {"kind": "NON_MODEL_FIXTURE", "name": "deterministic-abstain-v2"}
+
+    class Tokenizer:
+        """One token per whitespace-separated word. Declared, deterministic, and not the checkpoint's tokenizer."""
+
+        def encode(self, text, add_special_tokens=False):
+            return text.split()
+
+    def tokenizer(self):
+        return self.Tokenizer()
+
+    @staticmethod
+    def _pick(options):
+        # abstain where the question offers it; otherwise the last option, so an arbitrary user question still gets a
+        # well-formed answer rather than a crash
+        for preferred in ("unclear", "unknown", "none"):
+            if preferred in options:
+                return preferred
+        return options[-1]
 
     def predict(self, state, questions=None):
         questions = QUESTIONS if questions is None else questions
-        return {"answers": {k: {"type": "choice", "choice": "unclear", "probabilities": {
-            label: float(label == "unclear") for label in q["criteria"]
-        }} for k, q in questions.items()}}
+        answers = {}
+        for name, question in questions.items():
+            options = list(question["criteria"])
+            chosen = self._pick(options)
+            answers[name] = {"type": "choice", "choice": chosen,
+                             "probabilities": {label: float(label == chosen) for label in options}}
+        return {"answers": answers}
 
 
 class LayaBackend:
