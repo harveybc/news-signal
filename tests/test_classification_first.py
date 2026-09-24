@@ -397,3 +397,15 @@ def test_a_refusal_reports_the_providers_reason_and_not_only_the_runtimes(stub_r
     assert receipt["status"] == "REFUSED_WITH_INPUT"
     assert "LANGUAGE_NOT_VALIDATED" in receipt["refusal_reasons"]["relevance"]
     assert "population" in (receipt["why"] or ""), "the runtime's own observation is kept, not replaced"
+
+
+def test_a_refused_record_is_retained_but_is_not_an_actionable_event(stub_registry, tmp_path):
+    """CL02 keeps the failures; CL06 counts the decisions. A retained refusal must not inflate the second."""
+    registry, provider, _backend = stub_registry
+    store = ShadowStore(tmp_path / "shadow")
+    classify_event(corpus_events()["00_relevant"], task_id=TASK, as_of=AS_OF, registry=registry, store=store)
+    classify_event(corpus_events("refusals")["00_wrong_language"], task_id=TASK, as_of=AS_OF,
+                   registry=registry, store=store)
+    report = replay(tmp_path / "shadow")
+    assert report["records"] == 2 and report["events"] == 2
+    assert report["actionable_events"] == 1 and report["refused_events"] == 1

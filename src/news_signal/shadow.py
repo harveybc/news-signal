@@ -62,7 +62,8 @@ class ShadowStore:
 
     def replay(self):
         """Read every stored record back and re-derive its identity. A record that fails is REPORTED, not rewritten."""
-        report = {"records": 0, "events": 0, "revisions": 0, "integrity_failures": [], "actionable_events": 0}
+        report = {"records": 0, "events": 0, "revisions": 0, "integrity_failures": [], "actionable_events": 0,
+                  "refused_events": 0}
         if not self.root.is_dir():
             return report
         for folder in sorted(p for p in self.root.iterdir() if p.is_dir()):
@@ -72,7 +73,12 @@ class ShadowStore:
             report["events"] += 1
             report["records"] += len(records)
             report["revisions"] += len(records) - 1
-            report["actionable_events"] += 1          # one event identity is one decision, whatever its revision count
+            # one event identity is one decision, whatever its revision count -- and a refused record is not a decision at
+            # all, so it is counted apart rather than inflating what the store would act on
+            if any(r.get("status") == "SHADOW_ONLY" for r in records):
+                report["actionable_events"] += 1
+            else:
+                report["refused_events"] += 1
             for record in records:
                 stored = record.get("record_sha256")
                 recomputed = digest({k: v for k, v in record.items() if k != "record_sha256"})
