@@ -25,6 +25,7 @@ provider integrations are not implemented by this news application.
 | `laya_news` provider registered in M5PHET's `m5phet.providers` group | Implemented; discovered through the installed distribution |
 | Real Laya weights, direct-SDK parity, latency and memory | **Measured** on 2026-09-24; see *The first real slice* below |
 | Financial accuracy and domain calibration | Not measured: the labelled corpus is author-written and is a smoke test |
+| Durable queue and batch drain over a recorded source | Implemented; CPU tests, fixture and stub backends |
 | Prospective licensed news collector and data-gov registration | Next implementation |
 | MT5 demo and Alpaca paper connection through existing LTS | Next implementation; not connected by this package |
 | Real-capital trading or profitability | Not implemented or claimed |
@@ -123,6 +124,38 @@ Outputs one JSON `news_shadow.v1` receipt: `SHADOW_ONLY`, `UNCALIBRATED`,
 Without it, the CLI uses wall time and the old example correctly becomes stale.
 Exit 0 means a shadow record was produced, not permission to trade. Refusals exit 2.
 
+## Batch: recorded source to queue to store
+
+One item at a time is a demonstration; a consumer runs a queue. `drain` collects a
+directory of recorded news into the durable queue, classifies what is pending
+through the installed provider, persists each result and acknowledges the entry
+with the digest of the record that was written.
+
+```bash
+NEWS_SIGNAL_BACKEND=fixture .venv/bin/news-signal drain \
+  --source examples/eurusd/events --queue /tmp/news-queue --store /tmp/news-store \
+  --task news_relevance_eurusd.v1
+```
+
+13 recorded files, 12 entries (one is a duplicate), 12 results. What the join
+guarantees, and what each guarantee prevents:
+
+- The acknowledgement carries the digest of the record read back out of the store,
+  and that record must be about this entry's news. An entry closed with a digest
+  nobody can resolve, or with its neighbour's answer, both look finished.
+- A crash between persisting and acknowledging is recovered: the next drain finds
+  the result for that exact evaluation and acknowledges it instead of asking the
+  model again, so one decision does not become two records.
+- A failure leaves the entry `FAILED` with its reason and attempt count. `retry()`
+  is the operator's; a drain that retried itself would spin on a deterministic
+  failure while reporting activity.
+- An item the classifier refused -- wrong language, stale, out of scope -- is a
+  completed outcome: persisted, acknowledged, and counted apart from the successes.
+  A refusal about the *environment* (absent checkpoint, uninstalled provider) is
+  not: it fails the entry, because a missing file is not a judgement about news.
+
+Exit 2 when any entry was left `FAILED`; a refused item alone exits 0.
+
 ## Real Laya inference
 
 This path is implemented, but **not yet exercised with real weights here**.
@@ -191,9 +224,11 @@ English is the only initial language; unsupported languages refuse, not reroute.
 - `governance: NOT_REGISTERED_BY_THIS_TOOL` is intentional. These local hashes
   are **not** data-gov receipts, accepted scientific evidence or an audit signature.
 
-Duplicate ingestion, licensed retention, durable queues, collector authority,
-exactly-once intent effects and broker reconciliation belong to the next system
-integration, not a claim made by this single-event CLI.
+Duplicate ingestion and the durable queue are implemented and tested here
+(`news-signal drain`, above) over a **recorded** source. Licensed retention,
+collector authority over a live feed, exactly-once intent effects and broker
+reconciliation belong to the next system integration and are not claimed by this
+package.
 
 ## MT5 and Alpaca integration plan
 

@@ -6,12 +6,13 @@
   "current_stage": "integration_verification",
   "completed": ["discovery", "requirements", "acceptance_test_design", "architecture", "unit_test_design", "implementation", "unit_verification"],
   "traceability": "docs/DESIGN.md",
-  "software_evidence": "tests/test_signal.py; fixture CLI and CPU tests",
+  "software_evidence": "tests/test_signal.py; fixture CLI and CPU tests; tests/test_cl23_pipeline.py exercises recorded source -> queue -> installed provider -> persisted result -> acknowledgement, including crash and retry, with a fixture where the weights would be",
   "real_weights_measured": false,
   "governed_live_inputs": false,
   "broker_connections_accepted": [],
   "real_capital_authorized": false,
   "next_allowed_actions": ["Isolated pinned Laya weight smoke and resource measurements", "Prospective governed licensed collector", "LTS policy contract and MT5 demo/Alpaca paper tests"],
   "excluded": ["Profit claims", "Automatic real-money promotion", "Bypassing active experiment ownership"],
-  "history": [{"date": "2026-09-24", "action": "Scope and tests declared before adapter implementation; no broker or model-weight run"}]
+  "history": [{"date": "2026-09-24", "action": "Scope and tests declared before adapter implementation; no broker or model-weight run"},
+    {"date": "2026-09-24", "action": "CL23 drain joins the collector, the installed classifier and the shadow store: an acknowledgement can only name a record read back from the store, a crash between persisting and acknowledging is recovered without a second classification, and an environment refusal fails the entry instead of closing it; no weights, no feed, no broker"}]
 }

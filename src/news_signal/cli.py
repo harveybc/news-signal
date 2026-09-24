@@ -6,6 +6,7 @@ import json
 import sys
 
 from .backends import FixtureBackend, LayaBackend, seal_checkpoint
+from .collector import collect
 from .core import Refusal, classify, load_json, validate_news
 
 
@@ -48,6 +49,16 @@ def main(argv=None):
     ask.add_argument("--print-question", action="store_true",
                      help="print the exact question sent to the model and its identity, and ask nothing")
 
+    drain = sub.add_parser("drain", help=("Collect a recorded source into the durable queue and classify what is pending, "
+                                          "acknowledging each entry with the digest of the result actually persisted"))
+    drain.add_argument("--source", required=True, help="directory of recorded news files; a boundary, not a live feed")
+    drain.add_argument("--queue", required=True, help="directory of the durable queue")
+    drain.add_argument("--store", required=True, help="directory of the durable shadow store")
+    drain.add_argument("--task", default="news_relevance_eurusd.v1")
+    drain.add_argument("--as-of", help="Explicit replay clock, never a claim of live observation")
+    drain.add_argument("--max-age-seconds", type=int, default=900)
+    drain.add_argument("--limit", type=int, help="process at most this many pending entries; the rest stay pending")
+
     providers = sub.add_parser("providers", help="What the installed m5phet.providers group offers in this environment")
     args = parser.parse_args(argv)
     try:
@@ -59,6 +70,23 @@ def main(argv=None):
             result = {"schema": "news_providers.v1", "discovery": report,
                       "registered": found.names(),
                       "capabilities": {name: found.capabilities(name) for name in found.names()}}
+        elif args.command == "drain":
+            from contextlib import redirect_stdout
+            from .collector import DurableQueue, RecordedDirectorySource
+            from .pipeline import drain as drain_queue
+            from .shadow import ShadowStore
+            book = DurableQueue(args.queue)
+            with redirect_stdout(sys.stderr):
+                collected = collect(RecordedDirectorySource(args.source), book)
+                drained = drain_queue(book, ShadowStore(args.store), task_id=args.task, as_of=args.as_of,
+                                      max_age_seconds=args.max_age_seconds, limit=args.limit)
+            result = {"schema": "news_drain_run.v1", "collection": collected, "drain": drained,
+                      "clock_mode": drained["clock_mode"]}
+            # an item the model judged unusable is a completed outcome and exits 0. An entry left FAILED is work this
+            # environment did not do, and an exit code that hid it would let a scheduled drain report success forever.
+            if drained["failed"]:
+                print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2))
+                return 2
         elif args.command == "replay":
             from .application import replay as replay_store
             result = replay_store(args.store)
