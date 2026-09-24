@@ -17,6 +17,6 @@ development contract. No submission has been sent.
 Use the combined two-repository description in
 [M5PHET/docs/SUBMISSION.md](https://github.com/harveybc/M5PHET/blob/master/docs/SUBMISSION.md).
 The source URL field keeps the runnable integration; the description links both
-the general M5PHET program and this concrete consumer. There is only one URL
+the M5PHET framework and this concrete consumer. There is only one URL
 field: do not concatenate URLs there. No personal biography in the submission.
 Leaving the name blank does not anonymize the GitHub account or Git attribution.

@@ -5,10 +5,12 @@ for an auditable **shadow-trading research track**. Given a short news item and
 an explicitly named asset, the adapter emits relevance, event type and financial
 tone with input/model/question hashes. It does **not** emit or execute orders.
 
-First application of [M5PHET](https://github.com/harveybc/M5PHET), the broader
-five-front typed-ML program. This package **uses** its classification result
-contract at runtime; regression/forecasting, representation, RL and causal
-engines belong to the broader roadmap, not to this news application.
+First application of [M5PHET](https://github.com/harveybc/M5PHET), a typed
+machine-learning framework under development. This package **uses** its
+classification result contract at runtime. M5PHET's designed workflows connect
+event decisions, hierarchical market representations, uncertain forecasts and
+trading policies, starting with point-in-time economic calendar data. Those
+provider integrations are not implemented by this news application.
 
 ## Status
 
@@ -201,7 +203,7 @@ private account identifiers or generated run artifacts.
 - [agent-multi](https://github.com/harveybc/agent-multi): downstream RL, not text coercion into numeric tensors.
 - [predictor](https://github.com/harveybc/predictor): parallel doctoral experiments, not replaced by this track.
 - [Submission text](docs/SUBMISSION.md); [broader typed-ML RFC](docs/TYPED_ML_RFC.md).
-- [M5PHET](https://github.com/harveybc/M5PHET): general program and runtime result contract.
+- [M5PHET use cases](https://github.com/harveybc/M5PHET/blob/master/docs/USE_CASES.md): framework application contracts, distinct from this adapter's release scope.
 
 ## License
 

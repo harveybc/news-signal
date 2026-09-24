@@ -1,11 +1,20 @@
-# Proposal: typed decisions as one engine in a broader ML stack
+# Integration design: typed decisions within M5PHET
 
-The owner has named this broader program **M5PHET**. Its canonical proposal and
-contracts now live at https://github.com/harveybc/M5PHET. news-signal is its first
-application and consumes the pinned classification contract at runtime. The
-five operational fronts are classification, regression/forecasting,
-representation/unsupervised, RL and causal; optimization is cross-cutting.
-The original proposal text below remains context, not a claim of five engines.
+**M5PHET** is a typed machine-learning framework, not a research-program label.
+Its [canonical use cases](https://github.com/harveybc/M5PHET/blob/master/docs/USE_CASES.md)
+and [provider interfaces](https://github.com/harveybc/M5PHET/blob/master/docs/INTERFACES.md)
+define structured task input/output across five task families. news-signal is
+its first application and consumes the pinned classification contract at runtime.
+Do not duplicate Laya's classifier: use its SDK directly where no broader
+composition is needed, and adapt supported primitives where it is.
+
+The next shared data input is the actual economic dataset: schedule and consensus
+vintages, actual releases and revisions, with field-level availability. Numerical
+values are source data, not inferred by Laya. Hierarchical market states and
+calendar-aware forecasting/RL use those features through their own domain engines.
+See the [calendar contract](https://github.com/harveybc/M5PHET/blob/master/docs/ECONOMIC_CALENDAR.md).
+Geopolitical text remains a later source-specific extension. No new provider
+runtime or financial results are claimed by this documentation revision.
 
 Design-only summary of the owner's typed-ML proposal. Nothing below is claimed
 as implemented Laya capability or demonstrated trading advantage.
