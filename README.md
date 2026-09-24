@@ -5,15 +5,21 @@ for an auditable **shadow-trading research track**. Given a short news item and
 an explicitly named asset, the adapter emits relevance, event type and financial
 tone with input/model/question hashes. It does **not** emit or execute orders.
 
+First application of [M5PHET](https://github.com/harveybc/M5PHET), the broader
+five-front typed-ML program. This package **uses** its classification result
+contract at runtime; regression/forecasting, representation, RL and causal
+engines belong to the broader roadmap, not to this news application.
+
 ## Status
 
-**v0.1.0: software prototype, not a validated trading model.**
+**v0.2.0: software prototype, not a validated trading model.**
 
 | Capability | Status |
 |---|---|
 | Strict event input, timestamp checks, typed answers and JSON receipts | Implemented; CPU tests |
 | Local Laya SDK adapter, frozen SDK revision, checkpoint manifest, device checks | Implemented; SDK-shaped test double exercised |
 | Offline fixture CLI and refusal paths | Executed |
+| M5PHET classification contract | Pinned dependency, executed by every classification |
 | Real Laya weights, financial accuracy, domain calibration, latency/VRAM | Not measured in this release |
 | Prospective licensed news collector and data-gov registration | Next implementation |
 | MT5 demo and Alpaca paper connection through existing LTS | Next implementation; not connected by this package |
@@ -44,7 +50,8 @@ checks. A sentiment label is neither an expected return nor a buy/sell signal.
 
 ## Installation
 
-Python >=3.10. Base package has no runtime dependencies; tests need pytest.
+Python >=3.10 and Git for the pinned M5PHET dependency; tests need pytest.
+M5PHET's small contract library has no runtime dependencies of its own.
 Use a dedicated environment, not a running forecasting/trading environment.
 
 ```bash
@@ -130,6 +137,9 @@ English is the only initial language; unsupported languages refuse, not reroute.
   and distributions refuse. Probability rounding follows the pinned SDK.
 - Receipt hashes bind the complete input, model-facing state, questions and raw
   response. The output labels/probabilities remain explicitly uncalibrated.
+- `typed_result` is built by M5PHET from the actual features and expected label
+  population. Its model hash binds the model identity descriptor (including the
+  checkpoint hash for Laya), not a claim that this tool trained or calibrated it.
 - `governance: NOT_REGISTERED_BY_THIS_TOOL` is intentional. These local hashes
   are **not** data-gov receipts, accepted scientific evidence or an audit signature.
 
@@ -191,6 +201,7 @@ private account identifiers or generated run artifacts.
 - [agent-multi](https://github.com/harveybc/agent-multi): downstream RL, not text coercion into numeric tensors.
 - [predictor](https://github.com/harveybc/predictor): parallel doctoral experiments, not replaced by this track.
 - [Submission text](docs/SUBMISSION.md); [broader typed-ML RFC](docs/TYPED_ML_RFC.md).
+- [M5PHET](https://github.com/harveybc/M5PHET): general program and runtime result contract.
 
 ## License
 

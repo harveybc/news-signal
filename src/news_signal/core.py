@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 import time
 
+from m5phet import make_classification_result
+
 
 class Refusal(ValueError):
     pass
@@ -123,6 +125,11 @@ def classify(event, backend, as_of, max_age_seconds=900):
     response = backend.predict(state)
     elapsed = time.perf_counter() - started
     labels = validate_answers(response)
+    typed_result = make_classification_result(
+        labels, expected_labels={name: list(q["criteria"]) for name, q in QUESTIONS.items()},
+        input_sha256=digest(event), model_sha256=digest(backend.identity),
+        task_sha256=digest(QUESTIONS), probability_decimals=4,
+    )
     receipt = {
         "schema": "news_shadow.v1", "status": "SHADOW_ONLY",
         "execution_authorized": False, "calibration": "UNCALIBRATED",
@@ -134,6 +141,7 @@ def classify(event, backend, as_of, max_age_seconds=900):
         "input_sha256": digest(event), "state_sha256": digest(state),
         "questions_sha256": digest(QUESTIONS), "response_sha256": digest(response),
         "model": backend.identity, "features": labels, "inference_seconds": elapsed,
+        "typed_result": typed_result,
         "limitations": ["NO_RETURN_FORECAST", "NO_CALIBRATED_CONFIDENCE", "NO_BROKER_ORDERS"],
     }
     receipt["receipt_sha256"] = digest(receipt)

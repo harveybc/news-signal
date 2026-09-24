@@ -1,5 +1,12 @@
 # Proposal: typed decisions as one engine in a broader ML stack
 
+The owner has named this broader program **M5PHET**. Its canonical proposal and
+contracts now live at https://github.com/harveybc/M5PHET. news-signal is its first
+application and consumes the pinned classification contract at runtime. The
+five operational fronts are classification, regression/forecasting,
+representation/unsupervised, RL and causal; optimization is cross-cutting.
+The original proposal text below remains context, not a claim of five engines.
+
 Design-only summary of the owner's typed-ML proposal. Nothing below is claimed
 as implemented Laya capability or demonstrated trading advantage.
 

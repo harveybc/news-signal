@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "news-signal"
-version = "0.1.0"
+version = "0.2.0"
 description = "Auditable local Laya news classification for shadow trading research"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = []
+dependencies = ["m5phet @ git+https://github.com/harveybc/M5PHET.git@bcd65b78c12e53e85adc9f2328cb0c0faccb94e8"]
 
 [project.optional-dependencies]
 laya = ["laya @ git+https://github.com/NandhaKishorM/laya.git@1e28ac20c0896b1c37a744cd11f740eb98f8b178"]

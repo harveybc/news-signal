@@ -33,6 +33,25 @@ def test_receipt_is_shadow_and_bound(event):
     assert changed["execution_authorized"] is False
 
 
+def test_m5phet_contract_is_consumed_not_just_documented(event, monkeypatch):
+    from news_signal import core
+    from m5phet import make_classification_result
+    calls = []
+    def observed(*args, **kwargs):
+        calls.append(kwargs)
+        return make_classification_result(*args, **kwargs)
+    monkeypatch.setattr(core, "make_classification_result", observed)
+    receipt = core.classify(event, FixtureBackend(), NOW)
+    assert len(calls) == 1
+    typed = receipt["typed_result"]
+    assert typed["schema"] == "m5phet.classification.v1"
+    assert typed["outputs"] == receipt["features"]
+    assert typed["provenance"]["input_sha256"] == receipt["input_sha256"]
+    assert typed["provenance"]["task_sha256"] == receipt["questions_sha256"]
+    assert typed["provenance"]["model_sha256"] == digest(receipt["model"])
+    assert typed["execution_authorized"] is False
+
+
 @pytest.mark.parametrize("field,value", [
     ("asset", ""), ("language", "es"), ("schema", "unknown"),
     ("received_at", "2026-09-23T12:00:04Z"),

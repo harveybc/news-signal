@@ -1,5 +1,8 @@
 {
   "schema": "news_signal_method.v1",
+  "parent_program": "https://github.com/harveybc/M5PHET",
+  "runtime_contract": "m5phet.classification.v1",
+  "contract_revision": "bcd65b78c12e53e85adc9f2328cb0c0faccb94e8",
   "current_stage": "integration_verification",
   "completed": ["discovery", "requirements", "acceptance_test_design", "architecture", "unit_test_design", "implementation", "unit_verification"],
   "traceability": "docs/DESIGN.md",
