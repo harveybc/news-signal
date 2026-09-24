@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "future-receipt-013",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T12:30:00Z",
+ "headline": "Received after the decision clock",
+ "body": "This record claims to have been received after the moment the decision is being made."
+}

@@ -94,12 +94,13 @@ def validate_news(event, as_of, max_age_seconds):
     return decision
 
 
-def validate_answers(response):
+def validate_answers(response, questions=None):
+    questions = QUESTIONS if questions is None else questions
     answers = response.get("answers") if isinstance(response, dict) else None
-    if not isinstance(answers, dict) or set(answers) != set(QUESTIONS):
+    if not isinstance(answers, dict) or set(answers) != set(questions):
         raise Refusal("ANSWERS_INCOMPLETE_OR_FOREIGN")
     clean = {}
-    for name, question in QUESTIONS.items():
+    for name, question in questions.items():
         answer = answers[name]
         if not isinstance(answer, dict) or answer.get("type") != "choice":
             raise Refusal("INVALID_ANSWER_TYPE")
@@ -118,17 +119,21 @@ def validate_answers(response):
     return clean
 
 
-def classify(event, backend, as_of, max_age_seconds=900):
+def classify(event, backend, as_of, max_age_seconds=900, task_id=None):
+    from .tasks import DEFAULT_TASK, check_scope, questions as task_questions
+    task_id = DEFAULT_TASK if task_id is None else task_id
+    questions = task_questions(task_id)
     decision = validate_news(event, as_of, max_age_seconds)
+    check_scope(task_id, event["asset"])
     state = canonical({k: event[k] for k in ("asset", "headline", "body")})
     started = time.perf_counter()
-    response = backend.predict(state)
+    response = backend.predict(state, questions)
     elapsed = time.perf_counter() - started
-    labels = validate_answers(response)
+    labels = validate_answers(response, questions)
     typed_result = make_classification_result(
-        labels, expected_labels={name: list(q["criteria"]) for name, q in QUESTIONS.items()},
+        labels, expected_labels={name: list(q["criteria"]) for name, q in questions.items()},
         input_sha256=digest(event), model_sha256=digest(backend.identity),
-        task_sha256=digest(QUESTIONS), probability_decimals=4,
+        task_sha256=digest(questions), probability_decimals=4,
     )
     receipt = {
         "schema": "news_shadow.v1", "status": "SHADOW_ONLY",
@@ -138,8 +143,9 @@ def classify(event, backend, as_of, max_age_seconds=900):
         "published_at": event["published_at"], "received_at": event["received_at"],
         "as_of": decision.isoformat(), "recorded_at": datetime.now(timezone.utc).isoformat(),
         "max_age_seconds": max_age_seconds,
+        "task_id": task_id,
         "input_sha256": digest(event), "state_sha256": digest(state),
-        "questions_sha256": digest(QUESTIONS), "response_sha256": digest(response),
+        "questions_sha256": digest(questions), "response_sha256": digest(response),
         "model": backend.identity, "features": labels, "inference_seconds": elapsed,
         "typed_result": typed_result,
         "limitations": ["NO_RETURN_FORECAST", "NO_CALIBRATED_CONFIDENCE", "NO_BROKER_ORDERS"],

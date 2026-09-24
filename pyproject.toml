@@ -9,7 +9,7 @@ description = "Auditable local Laya news classification for shadow trading resea
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-dependencies = ["m5phet @ git+https://github.com/harveybc/M5PHET.git@bcd65b78c12e53e85adc9f2328cb0c0faccb94e8"]
+dependencies = ["m5phet @ git+https://github.com/harveybc/M5PHET.git@3f4a833ca794b20962c64a98f9f5280494185f9b"]
 
 [project.optional-dependencies]
 laya = ["laya @ git+https://github.com/NandhaKishorM/laya.git@1e28ac20c0896b1c37a744cd11f740eb98f8b178"]
@@ -17,6 +17,10 @@ test = ["pytest>=8"]
 
 [project.scripts]
 news-signal = "news_signal.cli:main"
+
+# The provider is discovered through M5PHET's designed group; nothing in this package registers itself any other way.
+[project.entry-points."m5phet.providers"]
+laya_news = "news_signal.provider:LayaNewsProvider"
 
 [tool.setuptools.packages.find]
 where = ["src"]

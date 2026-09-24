@@ -22,7 +22,10 @@ provider integrations are not implemented by this news application.
 | Local Laya SDK adapter, frozen SDK revision, checkpoint manifest, device checks | Implemented; SDK-shaped test double exercised |
 | Offline fixture CLI and refusal paths | Executed |
 | M5PHET classification contract | Pinned dependency, executed by every classification |
-| Real Laya weights, financial accuracy, domain calibration, latency/VRAM | Not measured in this release |
+| `laya_news` provider registered in M5PHET's `m5phet.providers` group | Implemented; discovered through the installed distribution |
+| Real Laya weights, direct-SDK parity, latency and memory | **Measured** on 2026-09-24; see *The first real slice* below |
+| Financial accuracy and domain calibration | Not measured: the labelled corpus is author-written and is a smoke test |
+| Durable queue and batch drain over a recorded source | Implemented; CPU tests, fixture and stub backends |
 | Prospective licensed news collector and data-gov registration | Next implementation |
 | MT5 demo and Alpaca paper connection through existing LTS | Next implementation; not connected by this package |
 | Real-capital trading or profitability | Not implemented or claimed |
@@ -31,6 +34,50 @@ The fixture always answers `unclear` and is labelled `NON_MODEL_FIXTURE`.
 Passing tests does not establish that Laya understands financial news. Upstream
 explicitly reports limitations of zero-shot typed decisions and confidence;
 see its [pinned README](https://github.com/NandhaKishorM/laya/blob/1e28ac20c0896b1c37a744cd11f740eb98f8b178/README.md).
+
+## The first real slice: EURUSD news relevance
+
+One versioned task, `news_relevance_eurusd.v1`, asks one question -- `related`,
+`unrelated`, `unclear` -- about the direct economic relevance of an English news
+item to the euro or the US dollar. It runs through the installed entry point and
+M5PHET's Registry, never by reaching into the backend:
+
+```bash
+export NEWS_SIGNAL_CHECKPOINT=/path/to/materialized/checkpoint
+export NEWS_SIGNAL_MANIFEST=/path/to/manifest.json      # news-signal seal-model writes this
+export NEWS_SIGNAL_DEVICE=cuda:0
+export NEWS_SIGNAL_GPU_UUID=GPU-<physical-uuid>
+export CUDA_VISIBLE_DEVICES=$NEWS_SIGNAL_GPU_UUID
+
+news-signal providers                                   # what the installed group offers here
+news-signal classify-registry --task news_relevance_eurusd.v1     --input examples/eurusd/events/00_relevant.json     --as-of 2026-09-24T12:00:00Z --store /path/to/shadow
+news-signal replay --store /path/to/shadow              # reads the store back; loads no model
+```
+
+The whole sealed corpus, the parity comparison and the cost measurement are one
+command each:
+
+```bash
+python3 tools/run_pilot.py --corpus examples/eurusd/corpus.json --out DIR --store DIR/shadow
+python3 tools/direct_sdk_reference.py --checkpoint CKPT --device cuda:0 --gpu-uuid GPU-...     --batch --permute --out DIR/direct.json --input examples/eurusd/events/*.json
+python3 tools/parity_report.py --direct DIR/direct.json --wrapper DIR/receipts/*.json
+python3 tools/score_corpus.py --corpus examples/eurusd/corpus.json --wrapper 'DIR/receipts/*.json'
+```
+
+`tools/direct_sdk_reference.py` never imports this package. It duplicates the
+state serialization, the question set and the call settings by hand, on purpose:
+an independent witness that shared our code would only reproduce our mistakes.
+
+Measured on an external RTX 5090 (`MEASURED` device uuid, pinned SDK
+`1e28ac20`), 2026-09-24: cold load 5.18 s, first inference 0.68 s, warm median
+**10.8 ms**, peak VRAM 2.47 GB of 33.7 GB, peak RSS 3.39 GB, 13 answered and 5
+refused. Direct SDK against this path: **12 of 12 distinct inputs exactly
+equal**, every decision field, no tolerance; **12 of 12** again after a restart.
+
+That is fidelity of this wrapper. It is not accuracy. On the 13 author-written
+rows of `examples/eurusd`, macro-F1 is **0.3333** and 6 of 13 labels match the
+author's -- a smoke test on a sealed but tiny bank, reported so the two questions
+never get confused for one another.
 
 ## Why a separate repository?
 
@@ -76,6 +123,38 @@ Outputs one JSON `news_shadow.v1` receipt: `SHADOW_ONLY`, `UNCALIBRATED`,
 `--as-of` is an explicit **replay clock**, never evidence of live receipt.
 Without it, the CLI uses wall time and the old example correctly becomes stale.
 Exit 0 means a shadow record was produced, not permission to trade. Refusals exit 2.
+
+## Batch: recorded source to queue to store
+
+One item at a time is a demonstration; a consumer runs a queue. `drain` collects a
+directory of recorded news into the durable queue, classifies what is pending
+through the installed provider, persists each result and acknowledges the entry
+with the digest of the record that was written.
+
+```bash
+NEWS_SIGNAL_BACKEND=fixture .venv/bin/news-signal drain \
+  --source examples/eurusd/events --queue /tmp/news-queue --store /tmp/news-store \
+  --task news_relevance_eurusd.v1
+```
+
+13 recorded files, 12 entries (one is a duplicate), 12 results. What the join
+guarantees, and what each guarantee prevents:
+
+- The acknowledgement carries the digest of the record read back out of the store,
+  and that record must be about this entry's news. An entry closed with a digest
+  nobody can resolve, or with its neighbour's answer, both look finished.
+- A crash between persisting and acknowledging is recovered: the next drain finds
+  the result for that exact evaluation and acknowledges it instead of asking the
+  model again, so one decision does not become two records.
+- A failure leaves the entry `FAILED` with its reason and attempt count. `retry()`
+  is the operator's; a drain that retried itself would spin on a deterministic
+  failure while reporting activity.
+- An item the classifier refused -- wrong language, stale, out of scope -- is a
+  completed outcome: persisted, acknowledged, and counted apart from the successes.
+  A refusal about the *environment* (absent checkpoint, uninstalled provider) is
+  not: it fails the entry, because a missing file is not a judgement about news.
+
+Exit 2 when any entry was left `FAILED`; a refused item alone exits 0.
 
 ## Real Laya inference
 
@@ -145,9 +224,11 @@ English is the only initial language; unsupported languages refuse, not reroute.
 - `governance: NOT_REGISTERED_BY_THIS_TOOL` is intentional. These local hashes
   are **not** data-gov receipts, accepted scientific evidence or an audit signature.
 
-Duplicate ingestion, licensed retention, durable queues, collector authority,
-exactly-once intent effects and broker reconciliation belong to the next system
-integration, not a claim made by this single-event CLI.
+Duplicate ingestion and the durable queue are implemented and tested here
+(`news-signal drain`, above) over a **recorded** source. Licensed retention,
+collector authority over a live feed, exactly-once intent effects and broker
+reconciliation belong to the next system integration and are not claimed by this
+package.
 
 ## MT5 and Alpaca integration plan
 

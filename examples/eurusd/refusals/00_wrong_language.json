@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "wrong-language-012",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "es",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "El BCE mantiene su tipo de deposito",
+ "body": "El Banco Central Europeo dejo su tipo de la facilidad de deposito sin cambios el miercoles."
+}

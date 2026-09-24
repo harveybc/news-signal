@@ -11,6 +11,15 @@ from .core import QUESTIONS, Refusal, canonical, digest
 SDK_COMMIT = "1e28ac20c0896b1c37a744cd11f740eb98f8b178"
 
 
+def same_gpu(observed, declared):
+    """CUDA_VISIBLE_DEVICES needs the `GPU-` form; `torch.cuda.get_device_properties().uuid` prints the bare form. Comparing
+    the two literally can never match on real hardware, so the prefix is normalised away and the rest must be identical."""
+    def bare(value):
+        text = str(value).strip().lower()
+        return text[4:] if text.startswith("gpu-") else text
+    return bool(observed) and bool(declared) and bare(observed) == bare(declared)
+
+
 def file_digest(path):
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -42,16 +51,87 @@ def verify_checkpoint(directory, manifest):
     return manifest
 
 
-class FixtureBackend:
-    identity = {"kind": "NON_MODEL_FIXTURE", "name": "always-unclear-v1"}
+#: `laya/common.py::build_sequence` keeps at most this many tokens of each rendered option, silently
+OPTION_TOKEN_LIMIT = 48
 
-    def predict(self, state):
-        return {"answers": {k: {"type": "choice", "choice": "unclear", "probabilities": {
-            label: float(label == "unclear") for label in q["criteria"]
-        }} for k, q in QUESTIONS.items()}}
+
+def sequence_budget(tok, state, questions, *, max_len=512, head_max_len=192):
+    """What the pinned SDK will and will not fit into one sequence, counted BEFORE it silently cuts anything.
+
+    The accounting mirrors `laya/common.py::build_sequence` at the pinned commit: the head is
+    `"<type> question: <instructions>"`, each option becomes a mask token plus at most 48 tokens of its rendered text, the
+    options are capped by `head_max_len`, the head is cut to whatever budget the options leave, and the STATE is then cut to
+    whatever room remains under `max_len`. Every one of those cuts is silent upstream, which is why this is computed here and
+    refused instead: a truncated question is a different question, and nobody downstream would see it happen.
+
+    Returns one report per question, with `fits` False when any part would be cut."""
+    reports = {}
+    for name, question in questions.items():
+        head = tok.encode(f"{question['type']} question: {question['instructions']}", add_special_tokens=False)
+        # Count what was ASKED, then what upstream would keep. Counting after the `[:48]` slice measured the slice, so `fits`
+        # could never be False for the one cut it was written to catch.
+        asked = {k: len(tok.encode(" " + f"{k}: {v}", add_special_tokens=False)) for k, v in question["criteria"].items()}
+        kept = {k: min(n, OPTION_TOKEN_LIMIT) for k, n in asked.items()}
+        truncated = sorted(k for k, n in asked.items() if n > OPTION_TOKEN_LIMIT)
+        options = [1 + n for n in kept.values()]
+        option_tokens = sum(options)
+        option_budget = head_max_len - option_tokens
+        head_kept = min(len(head), max(8, option_budget))
+        # [CLS] head [SEP] options [SEP] state [SEP]
+        prefix = 1 + head_kept + 1 + option_tokens + 1
+        room = max(0, max_len - prefix - 1)
+        state_tokens = len(tok.encode(state, add_special_tokens=False))
+        reports[name] = {"head_tokens": len(head), "head_tokens_kept": head_kept,
+                         "option_tokens": option_tokens, "options_capped": option_budget < 16,
+                         "option_tokens_asked": asked, "option_tokens_kept": kept,
+                         "option_token_limit": OPTION_TOKEN_LIMIT,
+                         "options_truncated": truncated,
+                         "state_tokens": state_tokens, "state_tokens_kept": min(state_tokens, room),
+                         "state_room": room, "max_len": max_len, "head_max_len": head_max_len,
+                         "fits": (head_kept >= len(head) and state_tokens <= room and option_budget >= 16
+                                  and not truncated)}
+    return reports
+
+
+class FixtureBackend:
+    """A declared non-model. It answers deterministically so the whole path can be exercised without 2.3 GB of weights, and
+    every receipt it produces carries `NON_MODEL_FIXTURE` so nothing it says can be mistaken for a measurement."""
+
+    identity = {"kind": "NON_MODEL_FIXTURE", "name": "deterministic-abstain-v2"}
+
+    class Tokenizer:
+        """One token per whitespace-separated word. Declared, deterministic, and not the checkpoint's tokenizer."""
+
+        def encode(self, text, add_special_tokens=False):
+            return text.split()
+
+    def tokenizer(self):
+        return self.Tokenizer()
+
+    @staticmethod
+    def _pick(options):
+        # abstain where the question offers it; otherwise the last option, so an arbitrary user question still gets a
+        # well-formed answer rather than a crash
+        for preferred in ("unclear", "unknown", "none"):
+            if preferred in options:
+                return preferred
+        return options[-1]
+
+    def predict(self, state, questions=None):
+        questions = QUESTIONS if questions is None else questions
+        answers = {}
+        for name, question in questions.items():
+            options = list(question["criteria"])
+            chosen = self._pick(options)
+            answers[name] = {"type": "choice", "choice": chosen,
+                             "probabilities": {label: float(label == chosen) for label in options}}
+        return {"answers": answers}
 
 
 class LayaBackend:
+    #: the pinned SDK's own sequence budget, as this adapter calls it
+    cfg = {"max_len": 512, "head_max_len": 192}
+
     @classmethod
     def from_agent(cls, agent, identity, expected_device):
         if str(agent.device) != expected_device:
@@ -78,8 +158,11 @@ class LayaBackend:
         from laya import Agent
         torch.set_num_threads(2)
         if device == "cuda:0":
-            if not torch.cuda.is_available() or str(torch.cuda.get_device_properties(0).uuid) != gpu_uuid:
-                raise Refusal("GPU_UUID_NOT_OBSERVED")
+            if not torch.cuda.is_available():
+                raise Refusal("GPU_UUID_NOT_OBSERVED: no CUDA device is visible to this process")
+            observed = str(torch.cuda.get_device_properties(0).uuid)
+            if not same_gpu(observed, gpu_uuid):
+                raise Refusal(f"GPU_UUID_NOT_OBSERVED: the visible device is {observed}, not {gpu_uuid}")
         # Offline snapshot includes encoder/config and tokenizer; never resolve a moving Hub ID.
         self.agent = Agent(str(Path(directory).resolve()), device=device, fast=False, compile=False)
         self.expected_device = device
@@ -90,16 +173,26 @@ class LayaBackend:
             "kind": "LAYA_LOCAL_CHECKPOINT", "sdk_version": dist.version,
             "sdk_commit": SDK_COMMIT, "checkpoint_sha256": manifest["sha256"],
             "device": str(self.agent.device), "gpu_uuid": gpu_uuid if device != "cpu" else None,
+            "gpu_uuid_observed": (str(torch.cuda.get_device_properties(0).uuid) if device == "cuda:0" else None),
+            "gpu_uuid_attribution": ("MEASURED" if device == "cuda:0" else "NOT_APPLICABLE"),
             "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
             "adapter_sha256": file_digest(Path(__file__)),
         }
 
-    def predict(self, state):
-        # Conservative cap below the pinned 512/192 state budget; never silently truncate news.
-        tokens = self.agent.tok.encode(state, add_special_tokens=False)
-        if len(tokens) > 256:
-            raise Refusal("TOKEN_BUDGET_EXCEEDED: select a documented short news field, do not silently truncate")
-        result = self.agent.system_one(state, QUESTIONS, max_len=512, head_max_len=192)
+    def predict(self, state, questions=None):
+        # The question set is the model's input, not a filter applied afterwards: Laya encodes question, options and text
+        # together. A caller that names no task gets the set this adapter shipped with.
+        questions = QUESTIONS if questions is None else questions
+        # The SDK cuts the state, the question head AND the options without telling anyone. Count all three first.
+        self.last_budget = sequence_budget(self.agent.tok, state, questions,
+                                           max_len=self.cfg["max_len"], head_max_len=self.cfg["head_max_len"])
+        over = {name: report for name, report in self.last_budget.items() if not report["fits"]}
+        if over:
+            raise Refusal(f"TOKEN_BUDGET_EXCEEDED: {sorted(over)} would be truncated by the pinned SDK "
+                          f"({over[sorted(over)[0]]}); select a shorter field or a shorter question, "
+                          f"do not silently truncate")
+        result = self.agent.system_one(state, questions, max_len=self.cfg["max_len"],
+                                       head_max_len=self.cfg["head_max_len"])
         if str(self.agent.device) != self.expected_device:
             raise Refusal("DEVICE_FALLBACK_FORBIDDEN")
         return result

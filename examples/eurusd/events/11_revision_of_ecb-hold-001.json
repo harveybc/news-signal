@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "ecb-hold-001",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "ECB keeps deposit rate unchanged at 2.00% (corrected)",
+ "body": "Corrects the vote count in the third paragraph. The European Central Bank left its deposit facility rate at 2.00% on Wednesday and said incoming euro-area inflation data would determine the pace of any further moves."
+}

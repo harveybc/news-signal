@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "ea-unemployment-004",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "Euro-area unemployment steady at 6.3%",
+ "body": "Eurostat said the euro-area unemployment rate was unchanged in August, with employment growth concentrated in services."
+}

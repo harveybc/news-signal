@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "fragment-009",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "Officials meet",
+ "body": "Officials met on Tuesday. No agenda, institution or country was given, and no statement was released afterwards."
+}

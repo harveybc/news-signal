@@ -1,0 +1,12 @@
+[
+ {"name": "rate_cut_risk",
+  "question": "Does this news make a near-term euro-area interest rate cut more likely?",
+  "options": [["more_likely", "the facts reported point towards easier policy"],
+              ["less_likely", "the facts reported point towards tighter policy"],
+              ["no_bearing", "the news does not bear on the euro-area policy path"]]},
+ {"name": "who_is_affected",
+  "question": "Whose economy does this news report on?",
+  "options": [["euro_area", "the euro area or one of its member states"],
+              ["united_states", "the United States"],
+              ["elsewhere", "another economy, or none in particular"]]}
+]

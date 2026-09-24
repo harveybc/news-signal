@@ -62,7 +62,7 @@ def test_m5phet_contract_is_consumed_not_just_documented(event, monkeypatch):
 def test_news_validation(event, field, value):
     event[field] = value
     class Never:
-        def predict(self, state):
+        def predict(self, state, questions=None):
             pytest.fail("inference before validation")
     with pytest.raises(Refusal):
         classify(event, Never(), NOW)
@@ -82,7 +82,7 @@ def test_stale_extra_fields_and_bad_limit(event):
 @pytest.mark.parametrize("mutation", ["missing", "nan", "bool", "sum", "choice", "argmax", "extra", "huge"])
 def test_response_rejections(event, mutation):
     class Bad(FixtureBackend):
-        def predict(self, state):
+        def predict(self, state, questions=None):
             r = super().predict(state)
             a = r["answers"]["relevance"]
             if mutation == "missing":
@@ -166,9 +166,13 @@ class FakeAgent:
 def test_sdk_adapter_contract_and_token_limit(event):
     backend = LayaBackend.from_agent(FakeAgent(), {"kind": "SDK_TEST_DOUBLE"}, "cpu")
     assert classify(event, backend, NOW)["status"] == "SHADOW_ONLY"
-    event["body"] = "word " * 400
+    # the cap is no longer a round number below the budget: it is the pinned SDK's OWN accounting, so the body has to
+    # actually overflow the room left by the head, the options and the separators
+    event["body"] = "word " * 600
     with pytest.raises(Refusal, match="TOKEN_BUDGET"):
         classify(event, backend, NOW)
+    fits = dict(event, body="word " * 100)
+    assert classify(fits, backend, NOW)["status"] == "SHADOW_ONLY", "what fits must not be refused"
     with pytest.raises(Refusal, match="DEVICE"):
         LayaBackend.from_agent(FakeAgent(), {}, "cuda:0")
 
@@ -231,7 +235,7 @@ def test_cli_backend_runtime_error(event, tmp_path, monkeypatch, capsys):
     from news_signal import cli
     p = tmp_path / "news.json"
     p.write_text(json.dumps(event))
-    def fail(self, state):
+    def fail(self, state, questions=None):
         raise RuntimeError("synthetic SDK failure")
     monkeypatch.setattr(FixtureBackend, "predict", fail)
     assert cli.main(["classify", "--input", str(p), "--backend", "fixture", "--as-of", NOW]) == 2
