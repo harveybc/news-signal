@@ -55,9 +55,13 @@ def test_an_external_identifier_can_never_place_a_file_outside_the_store(stub, t
     written = [p for p in tmp_path.rglob("*.json") if p.name != "manifest.json"]
     outside = [p for p in written if store_root not in p.parents and p.parent != store_root]
     assert not outside, f"the store wrote outside its own root: {outside}"
+    # an empty or blank identifier is REFUSED upstream by the record validator, which is correct; what this case fixes is
+    # that no identifier, accepted or refused, may decide where a file lands
+    assert outcome["status"] in ("SHADOW_ONLY", "REFUSED_WITH_INPUT")
     if outcome["stored"] is not None:
-        assert outcome["status"] == "SHADOW_ONLY"
         assert written, "a stored result must actually be on disk inside the root"
+        inside = [p for p in written if store_root in p.parents]
+        assert inside, "the record must be under the store root"
 
 
 def test_a_symlinked_store_entry_cannot_redirect_a_write(stub, tmp_path):
