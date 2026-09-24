@@ -29,7 +29,7 @@ def peak_rss_bytes():
 
 
 def classify_event(event, *, task_id, as_of, max_age_seconds=900, registry=None, report=None,
-                   store=None, request_id=None):
+                   store=None, request_id=None, question_spec=None):
     """One news item through the public path. Returns the envelope, the receipt and what was persisted."""
     if registry is None:
         registry, report = discover()
@@ -44,10 +44,11 @@ def classify_event(event, *, task_id, as_of, max_age_seconds=900, registry=None,
     known = caps.get("known_states") or []
     state_ref = known[0] if known else ABSENT_STATE
     request = request_for(event, task_id=task_id, state_ref=state_ref, as_of=as_of,
-                          max_age_seconds=max_age_seconds,
-                          request_id=request_id or f"news:{event['event_id']}:{digest(event)[:12]}")
+                          max_age_seconds=max_age_seconds, question_spec=question_spec,
+                          request_id=request_id or f"news:{digest(event)[:12]}:{task_id[-12:]}")
     result = run(request, registry)
-    receipt = _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, caps, report)
+    receipt = _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, caps, report,
+                       question_spec=question_spec)
     stored = None
     if store is not None and receipt["status"] in ("SHADOW_ONLY", "REFUSED_WITH_INPUT"):
         record, disposition = store.put(receipt)
@@ -57,7 +58,7 @@ def classify_event(event, *, task_id, as_of, max_age_seconds=900, registry=None,
             "status": receipt["status"]}
 
 
-def _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, caps, report):
+def _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, caps, report, question_spec=None):
     ok = result["status"] == Status.OK
     features = {}
     if ok:
@@ -82,7 +83,10 @@ def _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, 
         "calibration": "UNCALIBRATED",
         "governance": "NOT_REGISTERED_BY_THIS_TOOL",
         "task_id": task_id,
-        "task_sha256": task_digest(task_id),
+        "task_sha256": task_digest(task_id, question_spec),
+        # the exact words the model was given, not a name that stands for them
+        "question": _question_block(task_id, question_spec),
+        "question_sha256": _question_block(task_id, question_spec)["identity_sha256"],
         "provider_ref": PROVIDER_NAME,
         "entry_point_group": (report or {}).get("group", ENTRY_POINT_GROUP),
         "registered_providers": sorted((report or {}).get("registered", [])) or None,
@@ -106,6 +110,19 @@ def _receipt(event, task_id, as_of, max_age_seconds, request, result, provider, 
     }
     receipt["receipt_sha256"] = digest(receipt)
     return receipt
+
+
+def _question_block(task_id, question_spec):
+    """What was actually asked, serialized as the SDK received it. A task name is a label; this is the input."""
+    from .question import question_identity
+    from .tasks import questions as task_questions
+    asked = task_questions(task_id, question_spec)
+    return {"origin": "USER_AUTHORED_QUESTION" if question_spec else "PRESET_TASK",
+            "questions": asked,
+            "option_order": {name: list(q["criteria"]) for name, q in asked.items()},
+            # `sha256` sorts its keys and so cannot see a reordering; `identity_sha256` can, and the model can too
+            "sha256": digest(asked),
+            "identity_sha256": question_identity(asked)}
 
 
 def classify_file(path, **kwargs):

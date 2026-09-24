@@ -32,7 +32,7 @@ from .core import Refusal, canonical, digest
 SOURCE_IDENTITY = ("source", "event_id", "input_sha256")
 
 #: the fields that identify WHICH EVALUATION produced it. Two results are the same result only when all of these agree.
-EVALUATION_IDENTITY = ("task_id", "task_sha256", "provider_ref", "model_sha256", "state_digest",
+EVALUATION_IDENTITY = ("task_id", "task_sha256", "question_sha256", "provider_ref", "model_sha256", "state_digest",
                        "as_of", "max_age_seconds", "attempt")
 
 RECORD_SCHEMA = "news_shadow_record.v2"
@@ -42,6 +42,8 @@ def _evaluation(receipt):
     binding = receipt.get("binding") or {}
     return {"task_id": receipt.get("task_id"),
             "task_sha256": receipt.get("task_sha256"),
+            # the order-sensitive identity of the exact question the model was given
+            "question_sha256": receipt.get("question_sha256"),
             "provider_ref": receipt.get("provider_ref"),
             "model_sha256": binding.get("model_sha256"),
             "state_digest": binding.get("state_digest"),

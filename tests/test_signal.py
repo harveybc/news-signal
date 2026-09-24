@@ -166,9 +166,13 @@ class FakeAgent:
 def test_sdk_adapter_contract_and_token_limit(event):
     backend = LayaBackend.from_agent(FakeAgent(), {"kind": "SDK_TEST_DOUBLE"}, "cpu")
     assert classify(event, backend, NOW)["status"] == "SHADOW_ONLY"
-    event["body"] = "word " * 400
+    # the cap is no longer a round number below the budget: it is the pinned SDK's OWN accounting, so the body has to
+    # actually overflow the room left by the head, the options and the separators
+    event["body"] = "word " * 600
     with pytest.raises(Refusal, match="TOKEN_BUDGET"):
         classify(event, backend, NOW)
+    fits = dict(event, body="word " * 100)
+    assert classify(fits, backend, NOW)["status"] == "SHADOW_ONLY", "what fits must not be refused"
     with pytest.raises(Refusal, match="DEVICE"):
         LayaBackend.from_agent(FakeAgent(), {}, "cuda:0")
 

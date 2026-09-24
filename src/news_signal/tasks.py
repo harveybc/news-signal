@@ -47,25 +47,37 @@ TASKS = {
 DEFAULT_TASK = "news_triage.v1"
 
 
-def task(task_id):
-    """The task, or a typed refusal. An unknown task never falls back to the default: that would answer another question."""
+def task(task_id, question_spec=None):
+    """The task, or a typed refusal. An unknown task never falls back to the default: that would answer another question.
+
+    A task id of the form `adhoc.question.v1:<digest>` is a user-authored question. It is rebuilt from the supplied spec and
+    accepted only if it hashes to the digest in its own id, so an identity can never be attached to a different question."""
+    from .question import AD_HOC_PREFIX, ad_hoc_task
+    if isinstance(task_id, str) and task_id.startswith(AD_HOC_PREFIX + ":"):
+        if not isinstance(question_spec, dict):
+            raise Refusal("QUESTION_SPEC_REQUIRED: a user-authored task carries the question it asks")
+        built = ad_hoc_task(**question_spec)
+        if built["task_id"] != task_id:
+            raise Refusal(f"QUESTION_IDENTITY_MISMATCH: the supplied question hashes to {built['task_id']}, and the request "
+                          f"declares {task_id}; a question and its identity are one thing")
+        return built
     if task_id not in TASKS:
         raise Refusal(f"UNKNOWN_TASK: {task_id!r} is not one of {sorted(TASKS)}")
     return TASKS[task_id]
 
 
-def questions(task_id):
-    return task(task_id)["questions"]
+def questions(task_id, question_spec=None):
+    return task(task_id, question_spec)["questions"]
 
 
-def task_digest(task_id):
+def task_digest(task_id, question_spec=None):
     """The identity of what was asked. Two answers are comparable only when this is the same string."""
-    return digest(questions(task_id))
+    return digest(questions(task_id, question_spec))
 
 
-def check_scope(task_id, asset):
+def check_scope(task_id, asset, question_spec=None):
     """A task declares the assets it was written for. Answering outside that scope is a different task, not a wider one."""
-    allowed = task(task_id)["assets"]
+    allowed = task(task_id, question_spec)["assets"]
     if allowed is not None and asset not in allowed:
         raise Refusal(f"ASSET_NOT_IN_TASK_SCOPE: {task_id} covers {list(allowed)}, not {asset!r}")
     return asset

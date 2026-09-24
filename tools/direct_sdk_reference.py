@@ -39,6 +39,18 @@ RELEVANCE_EURUSD = {
 TASKS = {"news_relevance_eurusd.v1": RELEVANCE_EURUSD}
 
 
+def questions_from_spec(spec):
+    """Duplicated by hand: build the question mapping the same way the adapter does, from the same spec file.
+
+    This reads the SPEC -- the user's words -- not the adapter's output, so the two sides still construct the question
+    independently. Option order is taken as written, because order is part of what the model is given."""
+    options = spec["options"]
+    pairs = list(options.items()) if isinstance(options, dict) else [tuple(o) for o in options]
+    return {spec.get("name", "answer"): {"type": spec.get("schema", "choice"),
+                                         "instructions": spec["question"],
+                                         "criteria": {name: description for name, description in pairs}}}
+
+
 def canonical(value):
     """Duplicated by hand: the same canonical JSON form the wrapper serializes its state with."""
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
@@ -58,6 +70,7 @@ def main(argv=None):
     parser.add_argument("--input", required=True, nargs="+", help="one or more news records")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--task", default="news_relevance_eurusd.v1")
+    parser.add_argument("--question-file", help="a user-authored question spec; the SAME words the wrapper is given")
     parser.add_argument("--device", default="cpu", choices=["cpu", "cuda:0"])
     parser.add_argument("--gpu-uuid")
     parser.add_argument("--batch", action="store_true", help="additionally score every input in one predict_batch pass")
@@ -65,7 +78,13 @@ def main(argv=None):
     parser.add_argument("--out", help="write the report here instead of stdout")
     args = parser.parse_args(argv)
 
-    questions = TASKS[args.task]
+    if args.question_file:
+        spec = json.loads(open(args.question_file, encoding="utf-8").read())
+        questions = questions_from_spec(spec)
+        task_name = "user_authored_question"
+    else:
+        questions = TASKS[args.task]
+        task_name = args.task
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     if args.device == "cuda:0":
@@ -105,7 +124,8 @@ def main(argv=None):
 
     report = {"schema": "laya_direct_reference.v1",
               "calls_the_wrapper": False,
-              "task": args.task,
+              "task": task_name,
+              "questions_as_sent": questions,
               "questions_sha256": digest(questions),
               "settings": {"max_len": 512, "head_max_len": 192, "fast": False, "compile": False,
                            "device": str(agent.device), "torch_threads": 2},

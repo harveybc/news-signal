@@ -25,6 +25,7 @@ import time
 
 from . import core
 from .core import Refusal, canonical, digest, validate_news
+from .question import AD_HOC_PREFIX
 from .tasks import TASKS, check_scope, questions as task_questions
 
 PROVIDER_NAME = "laya_news"
@@ -120,6 +121,9 @@ class LayaNewsProvider:
                 "model_sha256": digest(backend.identity),
                 "task_id": CHECKPOINT_TASK_ID,
                 "compatible_task_ids": sorted(TASKS),
+                # the model's input IS the question, so this state answers any question this adapter has validated. The KIND
+                # names that contract; every member of it is built and checked here before anything is encoded.
+                "compatible_task_kinds": [AD_HOC_PREFIX],
                 "load_seconds": time.perf_counter() - started,
                 "load_kind": "COLD" if cold else "WARM",
                 "identity": copy.deepcopy(backend.identity)}
@@ -132,7 +136,12 @@ class LayaNewsProvider:
     # --- inference -------------------------------------------------------------------------------------------------------
     def infer(self, request, state):
         task_id = request["task_id"]
-        questions = task_questions(task_id)
+        spec = (request.get("inputs") or {}).get("question_spec")
+        try:
+            questions = task_questions(task_id, spec)
+        except Refusal as exc:
+            requested = list((request.get("output_schema") or {}).get("questions") or ["question"])
+            return {"outputs": {q: {"status": "INVALID_INPUT", "why": str(exc)} for q in requested}}
         requested = list((request.get("output_schema") or {}).get("questions") or [])
         event = ((request.get("inputs") or {}).get("news_event"))
         max_age = ((request.get("inputs") or {}).get("max_age_seconds"), DEFAULT_MAX_AGE_SECONDS)
@@ -144,7 +153,7 @@ class LayaNewsProvider:
         else:
             try:
                 validate_news(event, request["as_of"], max_age)
-                check_scope(task_id, event["asset"])
+                check_scope(task_id, event["asset"], spec)
             except Refusal as exc:
                 refusal = str(exc)
         if refusal is not None:
@@ -180,6 +189,7 @@ class LayaNewsProvider:
                 "population": population_of(event),
                 "provenance": {"task_id": task_id,
                                "questions_sha256": digest(questions),
+                               "questions_as_sent": copy.deepcopy(questions),
                                "state_sha256": digest(serialized),
                                "input_sha256": digest(event),
                                "response_sha256": digest(response),
@@ -192,8 +202,12 @@ def population_of(event):
     return {"event_ids": [event["event_id"]], "asset": event["asset"], "input_sha256": digest(event)}
 
 
-def request_for(event, *, task_id, state_ref, request_id, as_of, max_age_seconds=DEFAULT_MAX_AGE_SECONDS):
-    """A typed M5PHET request for one news item. The population is derived from the item, so a mismatch is detectable."""
+def request_for(event, *, task_id, state_ref, request_id, as_of, max_age_seconds=DEFAULT_MAX_AGE_SECONDS,
+                question_spec=None):
+    """A typed M5PHET request for one news item. The population is derived from the item, so a mismatch is detectable.
+
+    For a user-authored question the spec travels IN the request, so the request digest covers the exact words the model was
+    given: changing a rubric changes the request identity, not just a label on it."""
     return {"schema_version": "m5phet.task.draft2",
             "request_id": request_id,
             "task_id": task_id,
@@ -203,7 +217,8 @@ def request_for(event, *, task_id, state_ref, request_id, as_of, max_age_seconds
             "as_of": as_of,
             "provider_ref": PROVIDER_NAME,
             "fitted_state_ref": state_ref,
-            "output_schema": {"questions": sorted(task_questions(task_id))},
+            "output_schema": {"questions": sorted(task_questions(task_id, question_spec))},
             "population": population_of(event),
-            "inputs": {"news_event": event, "max_age_seconds": max_age_seconds},
+            "inputs": {"news_event": event, "max_age_seconds": max_age_seconds,
+                       **({"question_spec": question_spec} if question_spec else {})},
             "execution_constraints": {"partial_results": False}}
