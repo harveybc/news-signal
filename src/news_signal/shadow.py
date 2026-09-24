@@ -285,6 +285,7 @@ class ShadowStore:
                 report["integrity_failures"].append({"event_id": record.get("event_id"),
                                                      "record_sha256": record.get("record_sha256"),
                                                      "recomputed": record.get("recomputed_sha256"),
+                                                     "problems": record.get("integrity_problems"),
                                                      "quarantined": True})
         report["unfinished_writes"] = len(list(self.root.rglob("*.tmp")))
         for event_id, live in sorted(by_event.items(), key=lambda kv: str(kv[0])):
