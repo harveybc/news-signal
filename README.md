@@ -22,7 +22,9 @@ provider integrations are not implemented by this news application.
 | Local Laya SDK adapter, frozen SDK revision, checkpoint manifest, device checks | Implemented; SDK-shaped test double exercised |
 | Offline fixture CLI and refusal paths | Executed |
 | M5PHET classification contract | Pinned dependency, executed by every classification |
-| Real Laya weights, financial accuracy, domain calibration, latency/VRAM | Not measured in this release |
+| `laya_news` provider registered in M5PHET's `m5phet.providers` group | Implemented; discovered through the installed distribution |
+| Real Laya weights, direct-SDK parity, latency and memory | **Measured** on 2026-09-24; see *The first real slice* below |
+| Financial accuracy and domain calibration | Not measured: the labelled corpus is author-written and is a smoke test |
 | Prospective licensed news collector and data-gov registration | Next implementation |
 | MT5 demo and Alpaca paper connection through existing LTS | Next implementation; not connected by this package |
 | Real-capital trading or profitability | Not implemented or claimed |
@@ -31,6 +33,50 @@ The fixture always answers `unclear` and is labelled `NON_MODEL_FIXTURE`.
 Passing tests does not establish that Laya understands financial news. Upstream
 explicitly reports limitations of zero-shot typed decisions and confidence;
 see its [pinned README](https://github.com/NandhaKishorM/laya/blob/1e28ac20c0896b1c37a744cd11f740eb98f8b178/README.md).
+
+## The first real slice: EURUSD news relevance
+
+One versioned task, `news_relevance_eurusd.v1`, asks one question -- `related`,
+`unrelated`, `unclear` -- about the direct economic relevance of an English news
+item to the euro or the US dollar. It runs through the installed entry point and
+M5PHET's Registry, never by reaching into the backend:
+
+```bash
+export NEWS_SIGNAL_CHECKPOINT=/path/to/materialized/checkpoint
+export NEWS_SIGNAL_MANIFEST=/path/to/manifest.json      # news-signal seal-model writes this
+export NEWS_SIGNAL_DEVICE=cuda:0
+export NEWS_SIGNAL_GPU_UUID=GPU-<physical-uuid>
+export CUDA_VISIBLE_DEVICES=$NEWS_SIGNAL_GPU_UUID
+
+news-signal providers                                   # what the installed group offers here
+news-signal classify-registry --task news_relevance_eurusd.v1     --input examples/eurusd/events/00_relevant.json     --as-of 2026-09-24T12:00:00Z --store /path/to/shadow
+news-signal replay --store /path/to/shadow              # reads the store back; loads no model
+```
+
+The whole sealed corpus, the parity comparison and the cost measurement are one
+command each:
+
+```bash
+python3 tools/run_pilot.py --corpus examples/eurusd/corpus.json --out DIR --store DIR/shadow
+python3 tools/direct_sdk_reference.py --checkpoint CKPT --device cuda:0 --gpu-uuid GPU-...     --batch --permute --out DIR/direct.json --input examples/eurusd/events/*.json
+python3 tools/parity_report.py --direct DIR/direct.json --wrapper DIR/receipts/*.json
+python3 tools/score_corpus.py --corpus examples/eurusd/corpus.json --wrapper 'DIR/receipts/*.json'
+```
+
+`tools/direct_sdk_reference.py` never imports this package. It duplicates the
+state serialization, the question set and the call settings by hand, on purpose:
+an independent witness that shared our code would only reproduce our mistakes.
+
+Measured on an external RTX 5090 (`MEASURED` device uuid, pinned SDK
+`1e28ac20`), 2026-09-24: cold load 5.18 s, first inference 0.68 s, warm median
+**10.8 ms**, peak VRAM 2.47 GB of 33.7 GB, peak RSS 3.39 GB, 13 answered and 5
+refused. Direct SDK against this path: **12 of 12 distinct inputs exactly
+equal**, every decision field, no tolerance; **12 of 12** again after a restart.
+
+That is fidelity of this wrapper. It is not accuracy. On the 13 author-written
+rows of `examples/eurusd`, macro-F1 is **0.3333** and 6 of 13 labels match the
+author's -- a smoke test on a sealed but tiny bank, reported so the two questions
+never get confused for one another.
 
 ## Why a separate repository?
 

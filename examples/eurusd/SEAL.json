@@ -1,0 +1,27 @@
+{
+ "files": {
+  "corpus.json": "8d55ec3d4c66631efbe348d813775326908194c4f9ed25ebd1b0984c3ad68448",
+  "events/00_relevant.json": "5707e9a12c56b70b5fea64ec6d594842a625d9c73ec874e5cbf5abcc29c0a32b",
+  "events/01_relevant.json": "2ee06cd61ddc53ad003b1ca7c9003d6351f64d00b5437d54b67f4d74bb2c6917",
+  "events/02_relevant.json": "b723aea24f2fbe812d891a548282b02fbade62735e00bbf94f8be83b431205a0",
+  "events/03_relevant.json": "b9a0b83453e7b4efbb56b35b15697d44908935739ae6246f6a35ed425e5fa709",
+  "events/04_relevant.json": "445468d397d20b88f7971876852e064e305ef91cb9d6f6fbab70ef0a38fda7a4",
+  "events/05_unrelated.json": "d636c8224e0659295cfd8bc4f7ecdabbe997111fb3a442e8057b5e25c19270ec",
+  "events/06_unrelated.json": "61045ea751612c12d1b025090f4032387d4bba67bf95cdb20581dbe83004b161",
+  "events/07_unrelated_names_a_currency.json": "74606af7288aa8652ed2a946f5141e7cad82cab1f48653e64b315100e278b0a0",
+  "events/08_ambiguous.json": "8a0ddb8ea037b094f1b7b33788251bbe99005e671817690f0d3fec27d4b28c2e",
+  "events/09_negated.json": "1ae13286295820802a9be5890925c12faae2f678da93586890c6826646c37c08",
+  "events/10_duplicate_of_ecb-hold-001.json": "5707e9a12c56b70b5fea64ec6d594842a625d9c73ec874e5cbf5abcc29c0a32b",
+  "events/11_revision_of_ecb-hold-001.json": "34fc8f650490b9e9900241d2174c8223f9f0599136cb960da82fbaee1c47df2b",
+  "events/12_instruction_like.json": "e14e79548db19283d62c0c7594ae01e65352e6411651eb27b0afb6602b6b5a98",
+  "refusals/00_wrong_language.json": "7292c0f6011ae1b8a5d791789975adeb28fca73eca6041f2fba5ea30a951d93b",
+  "refusals/01_future_receipt.json": "963528f5f6d4975b10a4157c103b3c3bcf5f7bfd12c2600684ff4998c6d83fec",
+  "refusals/02_overlong_body.json": "87df5745d7d0eeb72cc62443b4d89972cd08d336e8879d745985297f447fb63f",
+  "refusals/03_over_token_budget.json": "43779bd96cc6eec3fd86eb494f8ebf80ba81c76188c482a6dd9cff7e8e199600",
+  "refusals/04_asset_out_of_task_scope.json": "e895f41013913cfcd91d48e60d395c12674a64077cfb35388e1829462d1b0721"
+ },
+ "reading": "the labels were fixed before any model answered; a later edit changes these digests",
+ "schema": "news_corpus_seal.v1",
+ "sealed_before_any_scoring_run": true,
+ "sha256": "9fe82cddf1663b49c01a1b4a7474a8600750c51c23f45f742ea87356f256643b"
+}

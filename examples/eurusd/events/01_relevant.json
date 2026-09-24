@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "fed-cut-002",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "Federal Reserve lowers target range by 25 basis points",
+ "body": "The Federal Open Market Committee reduced the federal funds target range to 3.75%-4.00%, citing a softening United States labour market."
+}

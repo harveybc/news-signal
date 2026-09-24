@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "passing-mention-008",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "Studio reports a strong opening weekend",
+ "body": "The film took 94 million dollars at the global box office over three days, the studio said, its best opening of the year."
+}

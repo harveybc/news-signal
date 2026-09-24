@@ -11,6 +11,15 @@ from .core import QUESTIONS, Refusal, canonical, digest
 SDK_COMMIT = "1e28ac20c0896b1c37a744cd11f740eb98f8b178"
 
 
+def same_gpu(observed, declared):
+    """CUDA_VISIBLE_DEVICES needs the `GPU-` form; `torch.cuda.get_device_properties().uuid` prints the bare form. Comparing
+    the two literally can never match on real hardware, so the prefix is normalised away and the rest must be identical."""
+    def bare(value):
+        text = str(value).strip().lower()
+        return text[4:] if text.startswith("gpu-") else text
+    return bool(observed) and bool(declared) and bare(observed) == bare(declared)
+
+
 def file_digest(path):
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -45,10 +54,11 @@ def verify_checkpoint(directory, manifest):
 class FixtureBackend:
     identity = {"kind": "NON_MODEL_FIXTURE", "name": "always-unclear-v1"}
 
-    def predict(self, state):
+    def predict(self, state, questions=None):
+        questions = QUESTIONS if questions is None else questions
         return {"answers": {k: {"type": "choice", "choice": "unclear", "probabilities": {
             label: float(label == "unclear") for label in q["criteria"]
-        }} for k, q in QUESTIONS.items()}}
+        }} for k, q in questions.items()}}
 
 
 class LayaBackend:
@@ -78,8 +88,11 @@ class LayaBackend:
         from laya import Agent
         torch.set_num_threads(2)
         if device == "cuda:0":
-            if not torch.cuda.is_available() or str(torch.cuda.get_device_properties(0).uuid) != gpu_uuid:
-                raise Refusal("GPU_UUID_NOT_OBSERVED")
+            if not torch.cuda.is_available():
+                raise Refusal("GPU_UUID_NOT_OBSERVED: no CUDA device is visible to this process")
+            observed = str(torch.cuda.get_device_properties(0).uuid)
+            if not same_gpu(observed, gpu_uuid):
+                raise Refusal(f"GPU_UUID_NOT_OBSERVED: the visible device is {observed}, not {gpu_uuid}")
         # Offline snapshot includes encoder/config and tokenizer; never resolve a moving Hub ID.
         self.agent = Agent(str(Path(directory).resolve()), device=device, fast=False, compile=False)
         self.expected_device = device
@@ -90,16 +103,21 @@ class LayaBackend:
             "kind": "LAYA_LOCAL_CHECKPOINT", "sdk_version": dist.version,
             "sdk_commit": SDK_COMMIT, "checkpoint_sha256": manifest["sha256"],
             "device": str(self.agent.device), "gpu_uuid": gpu_uuid if device != "cpu" else None,
+            "gpu_uuid_observed": (str(torch.cuda.get_device_properties(0).uuid) if device == "cuda:0" else None),
+            "gpu_uuid_attribution": ("MEASURED" if device == "cuda:0" else "NOT_APPLICABLE"),
             "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
             "adapter_sha256": file_digest(Path(__file__)),
         }
 
-    def predict(self, state):
+    def predict(self, state, questions=None):
+        # The question set is the model's input, not a filter applied afterwards: Laya encodes question, options and text
+        # together. A caller that names no task gets the set this adapter shipped with.
+        questions = QUESTIONS if questions is None else questions
         # Conservative cap below the pinned 512/192 state budget; never silently truncate news.
         tokens = self.agent.tok.encode(state, add_special_tokens=False)
         if len(tokens) > 256:
             raise Refusal("TOKEN_BUDGET_EXCEEDED: select a documented short news field, do not silently truncate")
-        result = self.agent.system_one(state, QUESTIONS, max_len=512, head_max_len=192)
+        result = self.agent.system_one(state, questions, max_len=512, head_max_len=192)
         if str(self.agent.device) != self.expected_device:
             raise Refusal("DEVICE_FALLBACK_FORBIDDEN")
         return result

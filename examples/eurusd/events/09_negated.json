@@ -1,0 +1,11 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "negated-010",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:50:00Z",
+ "received_at": "2026-09-24T11:50:30Z",
+ "headline": "Bank of Japan, not the ECB, meets on Thursday",
+ "body": "Thursday's policy meeting is the Bank of Japan's. No euro-area or United States rate decision is scheduled this week, and neither the ECB nor the Federal Reserve will publish projections."
+}

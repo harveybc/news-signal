@@ -23,10 +23,46 @@ def main(argv=None):
     run.add_argument("--gpu-uuid")
     run.add_argument("--as-of", help="Explicit replay clock, never a claim of live observation")
     run.add_argument("--max-age-seconds", type=int, default=900)
+
+    registry = sub.add_parser("classify-registry",
+                              help="Classify through the installed m5phet.providers entry point and the M5PHET Registry")
+    registry.add_argument("--input", required=True)
+    registry.add_argument("--task", default="news_relevance_eurusd.v1")
+    registry.add_argument("--as-of", help="Explicit replay clock, never a claim of live observation")
+    registry.add_argument("--max-age-seconds", type=int, default=900)
+    registry.add_argument("--store", help="Directory of the durable shadow store; omitted means do not persist")
+
+    replay = sub.add_parser("replay", help="Read the persisted shadow store back; loads no model and runs no inference")
+    replay.add_argument("--store", required=True)
+
+    providers = sub.add_parser("providers", help="What the installed m5phet.providers group offers in this environment")
     args = parser.parse_args(argv)
     try:
         if args.command == "seal-model":
             result = seal_checkpoint(args.checkpoint)
+        elif args.command == "providers":
+            from .application import discover
+            found, report = discover()
+            result = {"schema": "news_providers.v1", "discovery": report,
+                      "registered": found.names(),
+                      "capabilities": {name: found.capabilities(name) for name in found.names()}}
+        elif args.command == "replay":
+            from .application import replay as replay_store
+            result = replay_store(args.store)
+        elif args.command == "classify-registry":
+            from contextlib import redirect_stdout
+            from .application import classify_file
+            from .shadow import ShadowStore
+            as_of = args.as_of or datetime.now(timezone.utc).isoformat()
+            with redirect_stdout(sys.stderr):
+                outcome = classify_file(args.input, task_id=args.task, as_of=as_of,
+                                        max_age_seconds=args.max_age_seconds,
+                                        store=ShadowStore(args.store) if args.store else None)
+            result = {k: v for k, v in outcome.items() if k != "request"}
+            result["clock_mode"] = "REPLAY" if args.as_of else "WALL_CLOCK"
+            if result.get("status") != "SHADOW_ONLY":
+                print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2))
+                return 2
         else:
             event = load_json(args.input)
             as_of = args.as_of or datetime.now(timezone.utc).isoformat()
