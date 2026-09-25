@@ -221,3 +221,21 @@ def test_every_answer_carries_the_exact_wording_it_was_scored_with(stub_registry
     assert first["answers"]["relevancia"]["provenance"]["questions_sha256"] != \
         second["answers"]["relevancia"]["provenance"]["questions_sha256"]
     assert len(backend.seen) == 2
+
+
+def test_a_fixture_backend_marks_every_answer_as_a_non_model(manifest_file):
+    from m5phet.runtime import Registry
+    provider = LayaNewsProvider(environ={"NEWS_SIGNAL_BACKEND": "fixture", "NEWS_SIGNAL_DEVICE": "cpu"})
+    registry = Registry()
+    registry.register(provider)
+    out = run_task(envelope({"news": corpus_events()["00_relevant"]}, relevancia=RELEVANCE), registry)
+    answer = out["answers"]["relevancia"]
+    assert answer["backend"] == "fixture" and answer["non_model_fixture"] is True
+    assert answer["warning"].startswith("NON_MODEL_FIXTURE")
+
+
+def test_a_real_backend_names_itself_and_carries_no_fixture_warning(stub_registry):
+    registry, provider, _ = stub_registry
+    out = run_task(envelope({"news": corpus_events()["00_relevant"]}, relevancia=RELEVANCE), registry)
+    answer = out["answers"]["relevancia"]
+    assert answer["backend"] == provider.config["backend"] and "non_model_fixture" not in answer

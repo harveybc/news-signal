@@ -352,6 +352,13 @@ class LayaNewsProvider:
                              # the exact instruction and options the SDK scored: Laya encodes the question text with
                              # the news, so another wording of the same question is another input and another number
                              # (Retsu measured 0.9666 in English and 0.9605 in Spanish for one item, 2026-09-24)
+                             # which backend produced these numbers; a declared non-model says so in the answer itself,
+                             # because an MCP client once read fixture output as if a model had scored it (2026-09-24)
+                             "backend": self.config["backend"],
+                             **({"non_model_fixture": True,
+                                 "warning": "NON_MODEL_FIXTURE: these numbers come from a declared fixture, not a "
+                                            "trained model; they establish nothing about the news"}
+                                if self.config["backend"] == "fixture" else {}),
                              "instructions": questions[name].get("instructions"),
                              "options": list(questions[name]["options"]),
                              "wording": "these probabilities belong to this exact instruction and option text; a "
