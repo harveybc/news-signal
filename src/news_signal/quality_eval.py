@@ -22,6 +22,10 @@ of two numbers nobody can reproduce.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+from . import core
 from .core import Refusal
 
 #: the bin edges of the reliability diagram: ten fixed bins over [0, 1], declared so two runs bin identically
@@ -135,3 +139,37 @@ def closure_table(rows, *, title, decimals=6):
             str(row["comparability"]),
         ]) + " |")
     return "\n".join(lines) + "\n"
+
+
+#: the shape of the record the catalog publishes, and the environment variable that names the file holding it
+QUALITY_SCHEMA = "news_signal.quality.v1"
+QUALITY_ENV = "NEWS_SIGNAL_QUALITY"
+
+#: what the catalog says when no measurement has been made. A missing measurement is stated, never left blank
+NOT_MEASURED = "NOT_MEASURED"
+
+#: every field a published quality claim must carry. `corpus_id` heads the list on purpose: a macro-F1 whose corpus
+#: nobody can name is a number without a population, and WP09's rule is that no number travels without its corpus id
+QUALITY_FIELDS = ("schema", "corpus_id", "n", "macro_f1", "calibration", "protocol_digest", "corpus_seal",
+                  "label_provenance", "naive", "skill")
+
+
+def quality_record(environ=None):
+    """The measured quality this installation may publish, or `NOT_MEASURED`.
+
+    The record is a file the operator points at, not a constant in the source, so a number can never outlive the run
+    that produced it: delete the file and the catalog says NOT_MEASURED again. A file that exists but does not carry
+    every declared field -- the corpus id above all -- is refused rather than published in part, because a partial
+    quality claim reads exactly like a complete one."""
+    env = os.environ if environ is None else environ
+    path = env.get(QUALITY_ENV)
+    if not path:
+        return NOT_MEASURED
+    payload = core.load_json(Path(path).expanduser())
+    if not isinstance(payload, dict) or payload.get("schema") != QUALITY_SCHEMA:
+        raise Refusal(f"UNKNOWN_QUALITY_SCHEMA: {path!r} is not a {QUALITY_SCHEMA} record")
+    missing = [field for field in QUALITY_FIELDS if payload.get(field) in (None, "")]
+    if missing:
+        raise Refusal(f"INCOMPLETE_QUALITY_RECORD: {path!r} carries no {missing}; a quality claim without its corpus, "
+                      f"its counts and its naive reference is not a measurement")
+    return payload

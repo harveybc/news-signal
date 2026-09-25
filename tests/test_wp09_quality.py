@@ -14,7 +14,11 @@ import pytest
 
 from news_signal.quality_corpus import (CLASSES, EXCLUDED, TEMPLATE_VERSION, CorpusError, build_corpus, event_for,
                                         keyword_prediction, map_country, release_line)
-from news_signal.quality_eval import FixtureRun, brier, check_model_answer, closure_table, reliability, skill_from_scores
+from news_signal.core import Refusal
+from news_signal.provider import LayaNewsProvider
+from news_signal.quality_eval import (NOT_MEASURED, QUALITY_ENV, QUALITY_SCHEMA, FixtureRun, brier,
+                                     check_model_answer, closure_table, quality_record, reliability,
+                                     skill_from_scores)
 
 
 def row(country, description, *, date="2015/03/04", time="12:30:00", volatility="High Volatility Expected",
@@ -232,3 +236,45 @@ def test_the_closure_table_carries_every_column_the_owner_requires():
         assert column in table
     assert "0.400000" in table and "NOT_CARRIED" in table
     assert "error = 1 - macro_f1" in table
+
+
+# --- what the catalog publishes ------------------------------------------------------------------------------------
+
+def complete_record():
+    return {"schema": QUALITY_SCHEMA, "corpus_id": "7e4789e5", "n": 450, "macro_f1": 0.37776,
+            "calibration": {"status": "UNCALIBRATED", "expected_calibration_error": 0.1315, "brier": 0.6473},
+            "protocol_digest": "b9aefb3cf32d", "corpus_seal": "31257d47b87a",
+            "label_provenance": "INDEPENDENT_LABELS", "naive": {"majority_class": 0.1667}, "skill": {"skill": 0.2533}}
+
+
+def test_an_installation_that_measured_nothing_says_so(tmp_path):
+    assert quality_record({}) == NOT_MEASURED
+    assert LayaNewsProvider(environ={}).capabilities()["quality"] == NOT_MEASURED
+
+
+def test_a_complete_record_reaches_the_catalog_with_its_corpus_id(tmp_path):
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(complete_record()))
+    published = LayaNewsProvider(environ={QUALITY_ENV: str(path)}).capabilities()["quality"]
+    assert published["corpus_id"] == "7e4789e5" and published["n"] == 450
+    assert published["macro_f1"] == 0.37776 and published["calibration"]["status"] == "UNCALIBRATED"
+
+
+def test_a_quality_claim_without_its_corpus_is_refused_rather_than_published_in_part(tmp_path):
+    path = tmp_path / "quality.json"
+    incomplete = complete_record()
+    del incomplete["corpus_id"]
+    path.write_text(json.dumps(incomplete))
+    with pytest.raises(Refusal) as caught:
+        quality_record({QUALITY_ENV: str(path)})
+    assert "INCOMPLETE_QUALITY_RECORD" in str(caught.value) and "corpus_id" in str(caught.value)
+    # the catalog states the refusal instead of dropping the key, so a broken record cannot read as NOT_MEASURED
+    assert "QUALITY_RECORD_REFUSED" in LayaNewsProvider(environ={QUALITY_ENV: str(path)}).capabilities()["quality"]
+
+
+def test_a_record_of_another_schema_is_unknown_rather_than_weaker(tmp_path):
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(dict(complete_record(), schema="something.else")))
+    with pytest.raises(Refusal) as caught:
+        quality_record({QUALITY_ENV: str(path)})
+    assert "UNKNOWN_QUALITY_SCHEMA" in str(caught.value)

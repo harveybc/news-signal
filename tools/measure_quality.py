@@ -38,7 +38,8 @@ if str(REPO_SRC) not in sys.path:
 
 from news_signal.quality_corpus import (ASSET, CLASSES, QUESTION_INSTRUCTIONS, QUESTION_NAME, QUESTION_OPTIONS,
                                         build_corpus, keyword_prediction)
-from news_signal.quality_eval import brier, check_model_answer, closure_table, reliability, skill_from_scores
+from news_signal.quality_eval import (QUALITY_SCHEMA, brier, check_model_answer, closure_table, reliability,
+                                     skill_from_scores)
 
 #: the split is frozen at a declared instant and not at the clock, so two runs of this tool share one protocol digest
 #: and their reports are comparable instead of merely similar
@@ -305,6 +306,31 @@ def main():
                                     "per_class": keyword_metrics.values["per_class"]},
                "closure_rows": rows, "headline": reports["laya_zero_shot"][0].headline()}
     (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+
+    # WP09's done-when: the catalog carries the quality with the corpus it was measured on, or says NOT_MEASURED. The
+    # record is a file the operator points NEWS_SIGNAL_QUALITY at, so deleting it takes the claim down with it
+    laya_skill = skill_from_scores(laya_metrics.values["macro_f1"], laya_metrics.baseline["macro_f1"])
+    (out / "quality.json").write_text(json.dumps({
+        "schema": QUALITY_SCHEMA,
+        "corpus_id": manifest["corpus_id"],
+        "n": laya_metrics.counts["scored_rows"],
+        "macro_f1": laya_metrics.values["macro_f1"],
+        "accuracy": laya_metrics.values["accuracy"],
+        "calibration": {"status": "UNCALIBRATED",
+                        "expected_calibration_error": calibration["expected_calibration_error"],
+                        "brier": calibration["brier"], "bins": calibration["reliability"]["bin_count"],
+                        "statement": calibration["statement"]},
+        "protocol_digest": declared.digest,
+        "corpus_seal": seal.seal,
+        "label_provenance": f"{manifest['label_provenance']} ({declared.label_provenance} in the evaluation package's "
+                            f"vocabulary): {manifest['label_source']}",
+        "naive": {"majority_class": laya_metrics.baseline["macro_f1"],
+                  "keyword_baseline": keyword_metrics.values["macro_f1"], "metric": "macro_f1", "same_rows": True},
+        "skill": laya_skill,
+        "question": manifest["question"],
+        "reading": ("macro-F1 on 450 sealed, independently labelled rows of one task: which economy a calendar release "
+                    "line names. It is not a general claim about this classifier on other tasks or other texts."),
+    }, indent=2, sort_keys=True) + "\n")
     print(table)
     return 0
 
