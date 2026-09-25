@@ -201,3 +201,23 @@ def test_the_typed_single_question_path_is_unchanged_by_the_envelope(stub_regist
     assert result["status"] == Status.OK, result["why"]
     out = run_task(envelope({"news": event}, relevancia=RELEVANCE), registry)
     assert out["answers"]["relevancia"]["status"] == "OK" and provider.calls == 2 and len(backend.seen) == 2
+
+
+def test_every_answer_carries_the_exact_wording_it_was_scored_with(stub_registry):
+    """Retsu (2026-09-24): the English sentence scored euro_area 0.9666 and the Spanish one 0.9605 on the same news.
+    Laya encodes the question text with the item, so a rewording is a different input; the answer must say which one."""
+    registry, _, backend = stub_registry
+    event = corpus_events()["00_relevant"]
+    english = dict(RELEVANCE, instructions="Is this news relevant to EURUSD?")
+    spanish = dict(RELEVANCE, instructions="¿Es esta noticia relevante para EURUSD?")
+    first = run_task(envelope({"news": event}, relevancia=english), registry)
+    second = run_task(envelope({"news": event}, relevancia=spanish), registry)
+    for out, question in ((first, english), (second, spanish)):
+        answer = out["answers"]["relevancia"]
+        assert answer["instructions"] == question["instructions"]
+        assert answer["options"] == list(question["options"])
+        assert "rewording" in answer["wording"]
+    # two wordings are two question sets: the SDK saw two different inputs and the provenance says so
+    assert first["answers"]["relevancia"]["provenance"]["questions_sha256"] != \
+        second["answers"]["relevancia"]["provenance"]["questions_sha256"]
+    assert len(backend.seen) == 2

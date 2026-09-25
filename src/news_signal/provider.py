@@ -349,6 +349,13 @@ class LayaNewsProvider:
             answers[name] = {"type": "choice",
                              "status": "OK",
                              "label": answer["label"],
+                             # the exact instruction and options the SDK scored: Laya encodes the question text with
+                             # the news, so another wording of the same question is another input and another number
+                             # (Retsu measured 0.9666 in English and 0.9605 in Spanish for one item, 2026-09-24)
+                             "instructions": questions[name].get("instructions"),
+                             "options": list(questions[name]["options"]),
+                             "wording": "these probabilities belong to this exact instruction and option text; a "
+                                        "rewording of the question is a different input to the model",
                              # the SDK's own numbers at the SDK's own precision: no rounding, rescaling or renormalization
                              "uncalibrated_probabilities": answer["uncalibrated_probabilities"],
                              "probability_decimals": 4,
