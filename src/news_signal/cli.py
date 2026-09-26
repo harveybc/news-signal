@@ -59,6 +59,24 @@ def main(argv=None):
     drain.add_argument("--max-age-seconds", type=int, default=900)
     drain.add_argument("--limit", type=int, help="process at most this many pending entries; the rest stay pending")
 
+    collect_cmd = sub.add_parser("collect", help=("Collect a recorded source into the durable queue and report the "
+                                                  "boundary; loads no model, classifies nothing and calls no feed"))
+    collect_cmd.add_argument("--source", required=True, help="directory of recorded news files; a boundary, not a live feed")
+    collect_cmd.add_argument("--queue", required=True, help="directory of the durable queue")
+    collect_cmd.add_argument("--source-name", help=("declare WHICH source this boundary stands for; without it a silence "
+                                                   "cannot be attributed to anyone"))
+    collect_cmd.add_argument("--max-age-seconds", metavar="SECONDS|provider-default",
+                             help=("declare the maximum publication-to-receipt age; omitted declares none and refuses "
+                                   "nothing for age"))
+    collect_cmd.add_argument("--received-at", help="Explicit receipt clock for a replay of recorded files, never a claim of live observation")
+    collect_cmd.add_argument("--known-at", help="also report what was knowable at this instant")
+
+    knowable = sub.add_parser("known-at", help=("What was knowable at an instant: the queue read back, with everything "
+                                                "received later absent. Loads no model and runs no inference"))
+    knowable.add_argument("--queue", required=True)
+    knowable.add_argument("--as-of", required=True)
+    knowable.add_argument("--source")
+
     providers = sub.add_parser("providers", help="What the installed m5phet.providers group offers in this environment")
     args = parser.parse_args(argv)
     try:
@@ -70,6 +88,31 @@ def main(argv=None):
             result = {"schema": "news_providers.v1", "discovery": report,
                       "registered": found.names(),
                       "capabilities": {name: found.capabilities(name) for name in found.names()}}
+        elif args.command == "collect":
+            from contextlib import redirect_stdout
+            from .collector import (DECLARED_DEFAULT_MAX_AGE_SECONDS, DurableQueue, RecordedDirectorySource,
+                                    collect as collect_source, known_at)
+            declared = args.max_age_seconds
+            if declared is not None:
+                if declared == "provider-default":
+                    declared = DECLARED_DEFAULT_MAX_AGE_SECONDS
+                else:
+                    try:
+                        declared = int(declared)
+                    except ValueError:
+                        raise Refusal("INVALID_AGE_POLICY: --max-age-seconds takes whole seconds or 'provider-default'")
+            book = DurableQueue(args.queue, max_age_seconds=declared)
+            with redirect_stdout(sys.stderr):
+                collected = collect_source(RecordedDirectorySource(args.source, source_name=args.source_name), book,
+                                           received_at=args.received_at)
+            result = {"schema": "news_collection_run.v1", "collection": collected, "queue": book.report(),
+                      "clock_mode": "REPLAY" if args.received_at else "WALL_CLOCK",
+                      "known_at": known_at(book, args.known_at) if args.known_at else None,
+                      # this command reads files and writes a queue. It asks no model and authorizes nothing.
+                      "inference_performed": False, "execution_authorized": False}
+        elif args.command == "known-at":
+            from .collector import DurableQueue, known_at
+            result = known_at(DurableQueue(args.queue), args.as_of, source=args.source)
         elif args.command == "drain":
             from contextlib import redirect_stdout
             from .collector import DurableQueue, RecordedDirectorySource

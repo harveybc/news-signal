@@ -6,13 +6,14 @@
   "current_stage": "integration_verification",
   "completed": ["discovery", "requirements", "acceptance_test_design", "architecture", "unit_test_design", "implementation", "unit_verification"],
   "traceability": "docs/DESIGN.md",
-  "software_evidence": "tests/test_signal.py; fixture CLI and CPU tests; tests/test_cl23_pipeline.py exercises recorded source -> queue -> installed provider -> persisted result -> acknowledgement, including crash and retry, with a fixture where the weights would be",
+  "software_evidence": "tests/test_signal.py; fixture CLI and CPU tests; tests/test_cl23_pipeline.py exercises recorded source -> queue -> installed provider -> persisted result -> acknowledgement, including crash and retry, with a fixture where the weights would be; tests/test_rp148_collection_boundary.py holds the collection boundary: receipt clocks with a missing publication clock recorded as missing, duplicate against revision, known_at(T) swept over five instants, an interrupted collection replayed, a declared maximum age refusing STALE_AT_COLLECTION and AGE_NOT_MEASURABLE_WITHOUT_PUBLICATION_CLOCK, and AWAITED for a silent source -- all from recorded fixtures, with no feed call and no weights",
   "real_weights_measured": false,
   "governed_live_inputs": false,
   "broker_connections_accepted": [],
   "real_capital_authorized": false,
-  "next_allowed_actions": ["Isolated pinned Laya weight smoke and resource measurements", "Prospective governed licensed collector", "LTS policy contract and MT5 demo/Alpaca paper tests"],
+  "next_allowed_actions": ["Isolated pinned Laya weight smoke and resource measurements", "Arrival from a licensed feed into the existing collection boundary, and data-gov registration of what it collects (needs an entitlement this package does not hold)", "LTS policy contract and MT5 demo/Alpaca paper tests"],
   "excluded": ["Profit claims", "Automatic real-money promotion", "Bypassing active experiment ownership"],
   "history": [{"date": "2026-09-24", "action": "Scope and tests declared before adapter implementation; no broker or model-weight run"},
-    {"date": "2026-09-24", "action": "CL23 drain joins the collector, the installed classifier and the shadow store: an acknowledgement can only name a record read back from the store, a crash between persisting and acknowledging is recovered without a second classification, and an environment refusal fails the entry instead of closing it; no weights, no feed, no broker"}]
+    {"date": "2026-09-24", "action": "CL23 drain joins the collector, the installed classifier and the shadow store: an acknowledgement can only name a record read back from the store, a crash between persisting and acknowledging is recovered without a second classification, and an environment refusal fails the entry instead of closing it; no weights, no feed, no broker"},
+    {"date": "2026-09-26", "action": "RP148 collection boundary: receipt clocks kept apart from publication clocks and a missing publication clock recorded by name rather than substituted, duplicate against revision with no predecessor rewritten, known_at(T) over news, a DECLARED maximum age with two named refusals, and AWAITED (SILENT_SINCE against NEVER_PRODUCED) for a source that hands us nothing; 35 new CPU tests over recorded fixtures; no feed call, no entitlement, no credential, no weights"}]
 }

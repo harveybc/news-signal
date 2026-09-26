@@ -25,6 +25,18 @@ Model text is untrusted data, never shell instructions or tool calls.
 | N06 | Real Laya SDK adapter is distinct from fixture backend | SDK-injection integration test; fixture marked NON_MODEL_FIXTURE |
 | N07 | Reject implicit device fallback and overlong tokenized state | fake-agent negative tests, real weight smoke pending |
 | N08 | CLI prints parseable evidence and nonzero status on refusal | subprocess smoke and stale example |
+| RP148-1 | Every collected item carries our receipt clock, stamped here and unsupplied by the source; a source that declares no publication clock is recorded as declaring none and never given the receipt clock in its place | `test_rp148_collection_boundary.py` receipt-clock section; `test_cl18_collector.py::test_an_item_may_not_supply_the_moment_we_received_it` |
+| RP148-2 | The same item twice is a duplicate; changed text is a revision bound to the first and rewrites nothing; `known_at(T)` never includes an item received after T | `test_rp148_collection_boundary.py` dedup/`known_at` section, swept over five values of T; `test_cl20_queue_integrity.py` for cross-source identity |
+| RP148-3 | An item accepted for processing survives a restart, an acknowledgement is bound to the persisted record, and an interrupted collection or drain replays without double-counting | `test_cl18_collector.py::test_the_queue_survives_a_new_process`, `test_cl23_pipeline.py::test_a_crash_between_persisting_and_acknowledging_is_recovered_without_asking_again`, `test_rp148_collection_boundary.py::test_a_collection_interrupted_mid_batch_replays_without_double_counting` |
+| RP148-4 | Staleness is a declared policy: an item past the declared maximum age, and an item whose age cannot be measured, are refused by name; a source handing us nothing is `AWAITED`, distinguishing `SILENT_SINCE` from `NEVER_PRODUCED`, and no empty batch or neutral reading is invented | `test_rp148_collection_boundary.py` staleness and silence sections, including the CLI in a new process |
+
+The collection boundary (RP148) needs no model weights and no feed entitlement, and
+was built without either: `collector` stamps the receipt clock, records a missing
+publication clock as missing, decides duplicate against revision, answers
+`known_at(T)`, enforces a declared maximum age and reports `AWAITED` for a silent
+source. What an entitlement adds is the arrival of real bytes; licensed retention,
+authority over a live wire and data-gov registration of collected inputs remain
+unimplemented and unclaimed.
 
 Architecture: `core` validates and builds receipts; `backends` wraps the pinned
 SDK or a disclosed fixture; `cli` selects the backend and serializes JSON.

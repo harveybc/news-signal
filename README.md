@@ -26,7 +26,8 @@ provider integrations are not implemented by this news application.
 | Real Laya weights, direct-SDK parity, latency and memory | **Measured** on 2026-09-24; see *The first real slice* below |
 | Financial accuracy and domain calibration | Not measured: the labelled corpus is author-written and is a smoke test |
 | Durable queue and batch drain over a recorded source | Implemented; CPU tests, fixture and stub backends |
-| Prospective licensed news collector and data-gov registration | Next implementation |
+| Collection boundary: receipt clocks, dedup and revisions, `known_at(T)`, declared staleness, `AWAITED` | Implemented; CPU tests over recorded fixtures, no feed call |
+| Arrival from a licensed live feed, its entitlement and retention, and data-gov registration of collected inputs | Not implemented: needs an entitlement this package does not hold |
 | MT5 demo and Alpaca paper connection through existing LTS | Next implementation; not connected by this package |
 | Real-capital trading or profitability | Not implemented or claimed |
 
@@ -155,6 +156,52 @@ guarantees, and what each guarantee prevents:
   not: it fails the entry, because a missing file is not a judgement about news.
 
 Exit 2 when any entry was left `FAILED`; a refused item alone exits 0.
+
+## The collection boundary: clocks, duplicates, staleness, silence
+
+`collect` fills the queue and reports the boundary without loading a model or
+classifying anything; `known-at` reads the queue back as of an instant. Both are
+offline, and both are what a live wire would arrive into unchanged.
+
+```bash
+.venv/bin/news-signal collect \
+  --source examples/eurusd/events --queue /tmp/news-queue \
+  --source-name regression-bank --max-age-seconds provider-default \
+  --received-at 2026-09-24T11:50:30Z --known-at 2026-09-24T11:55:00Z
+
+.venv/bin/news-signal known-at --queue /tmp/news-queue --as-of 2026-09-24T11:50:29Z
+```
+
+- **Three clocks, and one substitution that is never made.** `published_at` is the
+  source's claim; `received_at` is ours, stamped here, and an item that supplies its
+  own is refused. A source that declares no publication clock is recorded as
+  declaring none (`publication_clock: NOT_PROVIDED_BY_SOURCE`, `published_at: null`,
+  `UPPER_BOUND_ONLY` reading) and the receipt clock is **not** copied into its place:
+  our reading bounds a publication instant from above and never from below.
+- **`known_at(T)`.** The entries whose receipt clock is at or before T, and nothing
+  else. An item received after T is absent, not ranked lower, and it is named in
+  `not_yet_received` so its absence is readable. This is answerable only because no
+  entry is ever rewritten: a revision is a new entry, so discarding what arrived
+  after T leaves exactly the text that stood at T.
+- **A second sighting is a duplicate; changed text is a revision.** The revision is
+  its own entry, bound to the first by the source's own identity, and the first keeps
+  its bytes, its digest and its receipt clock.
+- **Staleness is declared or it does not exist.** With no `--max-age-seconds` nothing
+  is refused for age and the record says `NOT_DECLARED`. With one declared, an item
+  whose publication-to-receipt lag exceeds it is refused `STALE_AT_COLLECTION`, and
+  an item with no publication clock is refused
+  `AGE_NOT_MEASURABLE_WITHOUT_PUBLICATION_CLOCK` rather than admitted as fresh.
+  `provider-default` declares the same number the decision boundary uses, by name.
+- **A source that hands us nothing is `AWAITED`.** Not an empty batch, not "no
+  relevant news", not neutral sentiment. A source that produced before and is silent
+  now is `SILENT_SINCE` with the silence measured; one that never produced is
+  `NEVER_PRODUCED`; a boundary with no declared source name attributes neither.
+- **Refusals are counted by name.** `refusals_by_name` makes "12 refused" into
+  something an operator can act on.
+
+What an entitlement would add is the arrival of real bytes. Licensed retention,
+collector authority over a live wire, and data-gov registration of collected inputs
+are not implemented and are not claimed here.
 
 ## Real Laya inference
 

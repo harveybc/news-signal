@@ -1,0 +1,9 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "no-clock-001",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "headline": "Euro-area trade balance narrows in August",
+ "body": "The euro-area trade surplus narrowed in August as import values rose faster than exports, according to the statistics release carried by this recorded fixture. This fixture deliberately carries no publication clock: the wording of the record is what a source with no publication field hands a collector."
+}

@@ -1,0 +1,10 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "late-001",
+ "source": "regression-bank",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T06:00:00Z",
+ "headline": "Euro-area PMI revision published overnight",
+ "body": "A revision to the euro-area composite purchasing managers index was published overnight. This fixture exists to be old: it declares a publication clock several hours before the receipt clock a replaying collector stamps, so a declared maximum age can refuse it by name."
+}

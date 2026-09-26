@@ -1,0 +1,10 @@
+{
+ "schema": "news_event.v1",
+ "event_id": "foreign-001",
+ "source": "another-wire",
+ "asset": "EURUSD",
+ "language": "en",
+ "published_at": "2026-09-24T11:49:00Z",
+ "headline": "Euro-area lending survey shows unchanged credit standards",
+ "body": "Credit standards for firms were unchanged in the latest euro-area bank lending survey. This fixture is carried by a different wire from the one the collection boundary of these tests declares, so that boundary must refuse it rather than attribute it to the declared source."
+}
