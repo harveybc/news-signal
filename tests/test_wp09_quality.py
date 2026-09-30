@@ -15,9 +15,10 @@ import pytest
 from news_signal.quality_corpus import (CLASSES, EXCLUDED, TEMPLATE_VERSION, CorpusError, build_corpus, event_for,
                                         keyword_prediction, map_country, release_line)
 from news_signal.core import Refusal
-from news_signal.provider import LayaNewsProvider
-from news_signal.quality_eval import (NOT_MEASURED, QUALITY_ENV, QUALITY_SCHEMA, FixtureRun, brier,
-                                     check_model_answer, closure_table, quality_record, reliability,
+from news_signal.provider import LayaNewsProvider, state_ref_for
+from news_signal.quality_eval import (NOT_MEASURED, QUALITY_CONTRACT_VERSION, QUALITY_ENV, QUALITY_SCHEMA, FixtureRun,
+                                     brier, check_model_answer, checkpoint_identity_from_manifest, closure_table,
+                                     load_quality_contract, quality_contract_report, quality_record, reliability,
                                      skill_from_scores)
 
 
@@ -278,3 +279,155 @@ def test_a_record_of_another_schema_is_unknown_rather_than_weaker(tmp_path):
     with pytest.raises(Refusal) as caught:
         quality_record({QUALITY_ENV: str(path)})
     assert "UNKNOWN_QUALITY_SCHEMA" in str(caught.value)
+
+
+# --- the versioned contract: one checkpoint, or no score -------------------------------------------------------
+
+def _identity(sha_byte):
+    return state_ref_for(sha_byte * 32)
+
+
+def _refusing_score(calls):
+    def score(_rows):
+        calls.append(True)
+        return {}
+    return score
+
+
+def test_an_absent_checkpoint_identity_refuses_before_any_score():
+    calls = []
+    rows = [{"event_id": "calendar:1", "state_ref": _identity("ab")}, {"event_id": "calendar:2"}]
+    with pytest.raises(Refusal) as caught:
+        quality_contract_report(rows, score=_refusing_score(calls))
+    assert calls == []
+    assert "CHECKPOINT_IDENTITY_ABSENT" in str(caught.value) and "calendar:2" in str(caught.value)
+    assert "macro_f1" not in str(caught.value)
+    with pytest.raises(Refusal) as empty:
+        quality_contract_report([], score=_refusing_score(calls))
+    assert calls == [] and "CHECKPOINT_IDENTITY_ABSENT" in str(empty.value)
+
+
+def test_a_weight_hash_is_not_the_checkpoint_identity_the_manifest_declares():
+    calls = []
+    rows = [{"event_id": "calendar:1", "checkpoint_sha256": "ab" * 32, "model_sha256": "cd" * 32}]
+    with pytest.raises(Refusal) as caught:
+        quality_contract_report(rows, score=_refusing_score(calls))
+    assert calls == []
+    assert "CHECKPOINT_IDENTITY_ABSENT" in str(caught.value) and "calendar:1" in str(caught.value)
+
+
+def test_mixed_checkpoint_identities_are_refused_and_not_blended():
+    calls = []
+    rows = [{"event_id": "calendar:1", "checkpoint_identity": _identity("ab")},
+            {"event_id": "calendar:2", "checkpoint_identity": _identity("cd")}]
+    with pytest.raises(Refusal) as caught:
+        quality_contract_report(rows, score=_refusing_score(calls))
+    assert calls == []
+    assert "CHECKPOINT_IDENTITY_MIXED" in str(caught.value) and "calendar:2" in str(caught.value)
+    assert "macro_f1" not in str(caught.value)
+    disagreed = [{"event_id": "calendar:3", "checkpoint_identity": _identity("ab"), "state_ref": _identity("cd")}]
+    with pytest.raises(Refusal) as one_row:
+        quality_contract_report(disagreed, score=_refusing_score(calls))
+    assert calls == [] and "CHECKPOINT_IDENTITY_MIXED" in str(one_row.value)
+
+
+def test_a_consistent_checkpoint_identity_is_echoed_and_no_f1_is_computed():
+    calls = []
+    identity = _identity("ab")
+
+    def score(materialized):
+        calls.append(list(materialized))
+        # a caller that hands back a score does not make this contract the thing that measured it
+        return {"corpus_id": "contract-fixture", "macro_f1": "not-a-measurement"}
+
+    rows = [{"event_id": "calendar:1", "state_ref": identity},
+            {"event_id": "calendar:2", "checkpoint_identity": identity}]
+    report = quality_contract_report(rows, score=score)
+    assert calls == [rows]
+    assert report["schema"] == report["version"] == QUALITY_CONTRACT_VERSION
+    assert report["checkpoint_identity"] == identity and report["n"] == 2
+    assert report["corpus_id"] == "contract-fixture"
+    assert "macro_f1" not in report and "f1" not in report and "accuracy" not in report
+
+
+def test_the_identity_is_the_sha_the_manifest_already_declares_and_no_weight_file_is_opened(tmp_path):
+    sha = "ab" * 32
+    weight = tmp_path / "model.safetensors"
+    manifest = {"schema": "news_checkpoint.v1", "sha256": sha,
+                "files": {"model.safetensors": {"bytes": 1, "sha256": "cd" * 32}}}
+    assert checkpoint_identity_from_manifest(manifest) == state_ref_for(sha)
+    assert not weight.exists()
+    with pytest.raises(Refusal) as caught:
+        checkpoint_identity_from_manifest(tmp_path / "checkpoint")
+    assert "CHECKPOINT_IDENTITY_ABSENT" in str(caught.value) and not weight.exists()
+    fixture = {"schema": "news_checkpoint.v1", "sha256": sha, "kind": "NON_MODEL_FIXTURE"}
+    with pytest.raises(Refusal) as non_model:
+        checkpoint_identity_from_manifest(fixture)
+    assert "CHECKPOINT_IDENTITY_ABSENT" in str(non_model.value)
+
+
+def test_a_historical_quality_record_is_not_a_versioned_contract():
+    historical = complete_record()
+    snapshot = json.dumps(historical, sort_keys=True)
+    with pytest.raises(Refusal) as caught:
+        load_quality_contract(historical)
+    assert "NOT_A_VERSIONED_CONTRACT" in str(caught.value)
+    assert json.dumps(historical, sort_keys=True) == snapshot
+    assert "checkpoint_identity" not in historical and historical["schema"] == QUALITY_SCHEMA
+
+
+def test_a_versioned_contract_that_names_no_checkpoint_is_not_published_and_gains_no_score(tmp_path):
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps({"schema": QUALITY_CONTRACT_VERSION, "version": QUALITY_CONTRACT_VERSION}))
+    with pytest.raises(Refusal) as caught:
+        quality_record({QUALITY_ENV: str(path)})
+    assert "CHECKPOINT_IDENTITY_ABSENT" in str(caught.value)
+    assert "macro_f1" not in str(caught.value)
+    stored = json.loads(path.read_text())
+    assert "checkpoint_identity" not in stored and "macro_f1" not in stored
+    refused = LayaNewsProvider(environ={QUALITY_ENV: str(path)}).capabilities()["quality"]
+    assert "QUALITY_RECORD_REFUSED" in refused and "CHECKPOINT_IDENTITY_ABSENT" in refused
+
+
+def test_the_catalog_does_not_invent_a_score_for_a_contract_that_only_names_its_checkpoint(tmp_path):
+    identity = _identity("ef")
+    payload = {"schema": QUALITY_CONTRACT_VERSION, "version": QUALITY_CONTRACT_VERSION,
+               "checkpoint_identity": identity}
+    assert load_quality_contract(payload)["checkpoint_identity"] == identity
+    assert "macro_f1" not in payload
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(Refusal) as caught:
+        quality_record({QUALITY_ENV: str(path)})
+    assert "INCOMPLETE_QUALITY_RECORD" in str(caught.value) and "macro_f1" in str(caught.value)
+    assert "macro_f1" not in json.loads(path.read_text())
+
+
+def test_catalog_refuses_quality_from_a_different_checkpoint(tmp_path):
+    quality = dict(complete_record(), schema=QUALITY_CONTRACT_VERSION, version=QUALITY_CONTRACT_VERSION,
+                   checkpoint_identity=_identity("ab"))
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(quality))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"schema": "news_checkpoint.v1", "sha256": "cd" * 32, "files": {}}))
+    provider = LayaNewsProvider(environ={QUALITY_ENV: str(path), "NEWS_SIGNAL_MANIFEST": str(manifest)})
+    assert "CHECKPOINT_IDENTITY_MISMATCH" in provider.capabilities()["quality"]
+
+
+def test_catalog_refuses_model_quality_without_a_served_model(tmp_path):
+    quality = dict(complete_record(), schema=QUALITY_CONTRACT_VERSION, version=QUALITY_CONTRACT_VERSION,
+                   checkpoint_identity=_identity("ab"))
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(quality))
+    assert "CHECKPOINT_IDENTITY_ABSENT" in LayaNewsProvider(environ={QUALITY_ENV: str(path)}).capabilities()["quality"]
+
+
+def test_catalog_publishes_quality_for_its_own_checkpoint(tmp_path):
+    quality = dict(complete_record(), schema=QUALITY_CONTRACT_VERSION, version=QUALITY_CONTRACT_VERSION,
+                   checkpoint_identity=_identity("ab"))
+    path = tmp_path / "quality.json"
+    path.write_text(json.dumps(quality))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"schema": "news_checkpoint.v1", "sha256": "ab" * 32, "files": {}}))
+    provider = LayaNewsProvider(environ={QUALITY_ENV: str(path), "NEWS_SIGNAL_MANIFEST": str(manifest)})
+    assert provider.capabilities()["quality"] == quality

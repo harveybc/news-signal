@@ -35,7 +35,7 @@ import time
 from . import core
 from .backends import sequence_budget
 from .core import Refusal, canonical, digest, validate_news
-from .quality_eval import quality_record
+from .quality_eval import QUALITY_CONTRACT_VERSION, checkpoint_identity_from_manifest, quality_record
 from .question import AD_HOC_PREFIX, SUPPORTED_SCHEMAS, build_question, question_identity
 from .tasks import TASKS, check_scope, questions as task_questions
 
@@ -129,6 +129,10 @@ class LayaNewsProvider:
         # operator's record and never written here, so the catalog cannot outlive the run that produced the number.
         try:
             quality = quality_record(self._environ)
+            if isinstance(quality, dict) and quality.get("schema") == QUALITY_CONTRACT_VERSION:
+                expected = checkpoint_identity_from_manifest(manifest)
+                if quality["checkpoint_identity"] != expected:
+                    raise Refusal("CHECKPOINT_IDENTITY_MISMATCH: quality was measured for a different checkpoint")
         except Refusal as exc:
             quality = f"QUALITY_RECORD_REFUSED: {exc}"
         return {"provider": self.name,

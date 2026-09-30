@@ -16,9 +16,12 @@ Four phases, each of which writes what the next one reads, so an interrupted run
 3. **run** — every row goes through the classification envelope to the private worker, one question per row, on the same
    transport the workbench uses. Each answer is checked to have come from the real backend and appended to a checkpoint
    file as it arrives. A fixture answer aborts the run by name.
-4. **score** — `m5phet_evaluation` computes the confusion, the per-class numbers, macro-F1, accuracy and the
+4. **score** — only after every answer names the same checkpoint identity the manifest already declared. An absent
+   identity, or two identities in one batch, stops the run before `m5phet_evaluation` is asked for a number. When the
+   identity is one, that package computes the confusion, the per-class numbers, macro-F1, accuracy and the
    majority-class baseline on the same scored rows; this tool adds the keyword baseline as a second arm on the same
-   sealed rows, the calibration of the uncalibrated probabilities, and the closure table.
+   sealed rows, the calibration of the uncalibrated probabilities, and the closure table. The quality record is the
+   versioned contract and echoes that checkpoint. This tool does not hash weight files.
 
 Nothing here tunes a prompt. The question's wording is fixed in `quality_corpus` and travels into the manifest, because
 Laya encodes the question with the text: a second wording would be a second measurement and would have to be reported
@@ -38,7 +41,8 @@ if str(REPO_SRC) not in sys.path:
 
 from news_signal.quality_corpus import (ASSET, CLASSES, QUESTION_INSTRUCTIONS, QUESTION_NAME, QUESTION_OPTIONS,
                                         build_corpus, keyword_prediction)
-from news_signal.quality_eval import (QUALITY_SCHEMA, brier, check_model_answer, closure_table, reliability,
+from news_signal.core import Refusal
+from news_signal.quality_eval import (brier, check_model_answer, closure_table, quality_contract_report, reliability,
                                      skill_from_scores)
 
 #: the split is frozen at a declared instant and not at the clock, so two runs of this tool share one protocol digest
@@ -232,6 +236,11 @@ def main():
         raise SystemExit(f"INCOMPLETE_RUN: {len(missing)} of {len(population)} rows have no answer, first {missing[0]!r}")
 
     ordered = [records[row] for row in population]
+    # Identity before any score. A batch that names no checkpoint, or names two, never reaches the scorer.
+    try:
+        binding = quality_contract_report(ordered)
+    except Refusal as exc:
+        raise SystemExit(str(exc)) from exc
     laya = {row: records[row]["predicted"] for row in population}
     texts = {entry["event"]["event_id"]: entry["event"]["body"] for entry in items}
     keyword = {row: keyword_prediction(texts[row]) for row in population}
@@ -292,9 +301,12 @@ def main():
                  "comparability": "COMPARABLE: same sealed rows, same metric"})
     table = closure_table(rows, title=f"WP09 closure -- corpus {manifest['corpus_id'][:16]}, "
                                       f"seal {seal.seal[:12]}, {seal.row_count} rows")
+    table = f"Checkpoint identity: `{binding['checkpoint_identity']}`\n\n" + table
     (out / "closure_table.md").write_text(table)
     calibration = reports["laya_zero_shot"][0].metric_sets[1].values
-    summary = {"corpus_id": manifest["corpus_id"], "protocol_digest": declared.digest, "corpus_seal": seal.seal,
+    summary = {"schema": binding["schema"], "version": binding["version"],
+               "checkpoint_identity": binding["checkpoint_identity"],
+               "corpus_id": manifest["corpus_id"], "protocol_digest": declared.digest, "corpus_seal": seal.seal,
                "rows": seal.row_count, "per_class": manifest["counts"]["per_class"],
                "laya": {"macro_f1": laya_metrics.values["macro_f1"], "accuracy": laya_metrics.values["accuracy"],
                         "per_class": laya_metrics.values["per_class"], "confusion": laya_metrics.values["confusion"],
@@ -311,7 +323,9 @@ def main():
     # record is a file the operator points NEWS_SIGNAL_QUALITY at, so deleting it takes the claim down with it
     laya_skill = skill_from_scores(laya_metrics.values["macro_f1"], laya_metrics.baseline["macro_f1"])
     (out / "quality.json").write_text(json.dumps({
-        "schema": QUALITY_SCHEMA,
+        "schema": binding["schema"],
+        "version": binding["version"],
+        "checkpoint_identity": binding["checkpoint_identity"],
         "corpus_id": manifest["corpus_id"],
         "n": laya_metrics.counts["scored_rows"],
         "macro_f1": laya_metrics.values["macro_f1"],
